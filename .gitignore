@@ -1,0 +1,29 @@
+.idea/
+*__pycache__
+
+### Linux ###
+*~
+
+# KDE directory preferences
+.directory
+
+# Linux trash folder which might appear on any partition or disk
+.Trash-*
+
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+dsp-env
+
+# WSL related files
+*\:Zone\.Identifier
