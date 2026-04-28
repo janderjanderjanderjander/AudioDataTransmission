@@ -5,6 +5,7 @@ from pyqtgraph.Qt import QtWidgets, QtCore
 
 sampleRate = 44100 # Hz
 chunkSize = 2048 
+cutoffLine = 40
 
 # Conigure input.
 stream = sd.InputStream(
@@ -18,12 +19,25 @@ def getData():
     samples, overflowed = stream.read(chunkSize)
     if overflowed:
         print("ERROR: Overflow")
-    return samples.flatten() # Convert 1xI into Ix1 
+    samples = samples.flatten() # Convert 1xI into Ix1 
+    windowed = samples * np.hanning(len(samples))
+    freqDom = np.fft.rfft(windowed)
+    magnitudes = np.abs(freqDom) #magnitudes
+    xAxis = np.fft.rfftfreq(len(samples), d=1/sampleRate)
 
-    #TODO: Window function here
-
-    #TODO: DFT
-
+    #detect peaks
+    largestPeaks = np.argsort(magnitudes)[::-1]
+    #filter off from cutoff
+    valid = []
+    for i in largestPeaks[:7]:
+        if magnitudes[i] > cutoffLine:
+            valid.append(i)
+    peakFreqs = xAxis[valid]
+    print(peakFreqs)
+    return magnitudes
+    
+    
+    
 def update():
     #Timer handler
     data = getData()
@@ -39,6 +53,7 @@ def main():
     app = QtWidgets.QApplication([])
     win = pg.GraphicsLayoutWidget(show=True, title="Raw Audio Input")
     plot = win.addPlot()
+    plot.setYRange(0, 100)
     data_line = plot.plot(pen='y')
 
     #Timer for updates
