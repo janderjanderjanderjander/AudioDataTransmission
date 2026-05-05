@@ -9,6 +9,11 @@ cutoffLine = 1
 
 inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]
 
+#Byte handling variables
+last1 = last2 = last3 = last4 = lastP = []
+lastParity = 0
+
+
 '''
 if 
     sampleRate = 48000 # Hz
@@ -68,10 +73,34 @@ def getData():
     return powers
     
 def update():
+    global last1, last2, last3, last4, lastP, lastParity
     #Timer handler
     data = getData()
+
+    
+    #TODO: REMOVE, since this is just for readablity
+    #Turn into nice numbers
+    p = [int(round(float(x), 0) != 0) for x in data]
+
+    #Check if byte is valid by checking 
+    last4 = last3
+    last3 = last2
+    last2 = last1
+    last1 = p
+    parity = p[-1]
+
+    values = [last1, last2, last3, last4]
+
+    match = next((v for v in values if values.count(v) >= 3), None)
+
+    if match is not None and lastP != p and lastParity != parity :
+        print(p)
+        lastP = p
+        lastParity = parity
+
+
     #DEBUG
-    print([round(float(x), 0) for x in data])
+    #print(p)
 
 def main():
     app = QtWidgets.QApplication([])
