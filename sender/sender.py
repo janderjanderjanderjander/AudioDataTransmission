@@ -36,7 +36,7 @@ def qam(filepath):
     
 
 def freq_keying(filepath):
-    sr = 44100
+    sr = 48000
     duration = 0.5
 
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
@@ -87,5 +87,38 @@ def freq_keying(filepath):
     print("End of file!")
     scipy.io.wavfile.write("temp.wav", sr, totalaudio)
 
-#freq_keying("projectDesc.png")
+
+def freq_sequenceDEBUG(filepath="temp.wav"):
+    sr = 48000
+    duration = 5.0  # seconds per tone
+
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+
+    start = 1000
+    stop = 9000
+    step = 1000
+
+    frequencies = np.arange(start, stop + step, step)
+
+    audio_sequence = []
+
+    for f in frequencies:
+        tone = np.sin(2 * np.pi * f * t)
+        audio_sequence.append(tone)
+
+    # Concatenate all tones into one long signal
+    total_audio = np.concatenate(audio_sequence)
+
+    # Normalize to avoid clipping
+    total_audio = total_audio / np.max(np.abs(total_audio))
+
+    # Convert to 16-bit PCM
+    total_audio = (total_audio * 32767).astype(np.int16)
+
+    scipy.io.wavfile.write(filepath, sr, total_audio)
+
+    print("Written to temp.wav")
+
+freq_sequenceDEBUG()
+#freq_keying("common/pics/samplePicBlackNWhiteSmall.png")
 #qam("projectDesc.png")
