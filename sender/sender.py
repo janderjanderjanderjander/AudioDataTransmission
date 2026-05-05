@@ -60,21 +60,36 @@ def freq_keying(filepath):
 
         totalaudio = np.zeros(0)
 
+        #silence between notes to avoid overlap
+        #TODO: With better implementation then this wont be a problem
+        silenceDuration = 0.1
+        silence = np.zeros(int(sr * silenceDuration))
+
         for byte in bytearray(f):
             #print("{:08b}".format(byte))
+            #input("This should be header start for png")
             
             bytearr = np.zeros(t.size)
             for bit in range(8):
                 if ((byte >> bit) & 1):
                     bytearr += audio[bit]
-            
-            if (rsyc_counter == resync_interval):
-                bytearr += audio[-1]
-                rsyc_counter = 0
 
+            #TODO: fix parity bit
+            #right now it just does  0 1 0 1 0 1 and receiver checks it.
+            if counter % 2 == 0:
+                bytearr += audio[-1]
+
+            
+            # if (rsyc_counter == resync_interval):
+            #     bytearr += audio[-1]
+            #     rsyc_counter = 0
+
+            
             totalaudio = np.append(totalaudio, bytearr)
+            totalaudio = np.append(totalaudio, silence)
+            
             counter += 1
-            rsyc_counter += 1
+            #rsyc_counter += 1
 
             if (counter % 1000 == 0):
                 print("Playing!")
@@ -90,9 +105,11 @@ def freq_keying(filepath):
 
 def freq_sequenceDEBUG(filepath="temp.wav"):
     sr = 48000
-    duration = 5.0  # seconds per tone
+    duration = 0.5  # seconds per tone
+    silenceDuration = 0.1
 
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+    silence = np.zeros(int(sr * silenceDuration))
 
     start = 1000
     stop = 9000
@@ -105,6 +122,7 @@ def freq_sequenceDEBUG(filepath="temp.wav"):
     for f in frequencies:
         tone = np.sin(2 * np.pi * f * t)
         audio_sequence.append(tone)
+        audio_sequence.append(silence)
 
     # Concatenate all tones into one long signal
     total_audio = np.concatenate(audio_sequence)
@@ -119,6 +137,6 @@ def freq_sequenceDEBUG(filepath="temp.wav"):
 
     print("Written to temp.wav")
 
-freq_sequenceDEBUG()
-#freq_keying("common/pics/samplePicBlackNWhiteSmall.png")
+#freq_sequenceDEBUG()
+freq_keying("common/pics/samplePicBlackNWhiteSmall.png")
 #qam("projectDesc.png")
