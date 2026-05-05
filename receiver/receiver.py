@@ -3,9 +3,21 @@ import pyqtgraph as pg
 import sounddevice as sd
 from pyqtgraph.Qt import QtWidgets, QtCore
 
-sampleRate = 44100 # Hz
-chunkSize = 2048 
-cutoffLine = 40
+sampleRate = 48000 # Hz
+chunkSize = 4800 # Δf = 10 Hz
+cutoffLine = 1
+
+inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]
+
+'''
+if 
+    sampleRate = 48000 # Hz
+    chunkSize = 4800 # Δf = 10 Hz
+then
+    1000 Hz → bin 100
+    2000 Hz → bin 200
+    3000 Hz → bin 300
+'''
 
 # Conigure input.
 stream = sd.InputStream(
@@ -14,47 +26,61 @@ stream = sd.InputStream(
     blocksize=chunkSize
 )
 
+#DEBUG quitting the
+class MainWindow(QtWidgets.QWidget):
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key.Key_Q:
+            stream.stop()
+            stream.close()
+            QtWidgets.QApplication.quit()
+
+# https://every-algorithm.github.io/2025/06/25/goertzel_algorithm.html
+def goertzel(samples, target_freq, sample_rate):
+    """
+    Compute the magnitude of the frequency component at target_freq
+    in the given samples using the Goertzel algorithm.
+    """
+    N = len(samples)
+    k = int(0.5 + (N * target_freq / sample_rate))
+    omega = 2.0 * np.pi * k / N
+    coeff = 2.0 * np.cos(omega)
+    s_prev = 0.0
+    s_prev2 = 0.0
+    for sample in samples:
+        s = sample - coeff * s_prev - s_prev2
+        s_prev2 = s_prev
+        s_prev = s
+    power = s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
+    magnitude = np.sqrt(power)
+    return magnitude
+
 def getData():
     #Get one chunk of data
     samples, overflowed = stream.read(chunkSize)
     if overflowed:
         print("ERROR: Overflow")
-    samples = samples.flatten() # Convert 1xI into Ix1 
-    windowed = samples * np.hanning(len(samples))
-    freqDom = np.fft.rfft(windowed)
-    magnitudes = np.abs(freqDom) #magnitudes
-    xAxis = np.fft.rfftfreq(len(samples), d=1/sampleRate)
+    samples = samples.flatten() # Convert 1xI into Ix1
 
-    #detect peaks
-    largestPeaks = np.argsort(magnitudes)[::-1]
-    #filter off from cutoff
-    valid = []
-    for i in largestPeaks[:7]:
-        if magnitudes[i] > cutoffLine:
-            valid.append(i)
-    peakFreqs = xAxis[valid]
-    print(peakFreqs)
-    return magnitudes
+    # Windowing using hanning
+    windowed = samples * np.hanning(len(samples))
     
-    
+    powers = [goertzel(windowed, f, sampleRate) for f in inputFreqs]
+
+    return powers
     
 def update():
     #Timer handler
     data = getData()
-    data_line.setData(data)
+    #DEBUG
+    print(data)
 
 def main():
-
-    stream.start()
-
-    #DEBUG
-    #Plot raw data
-    global data_line
     app = QtWidgets.QApplication([])
-    win = pg.GraphicsLayoutWidget(show=True, title="Raw Audio Input")
-    plot = win.addPlot()
-    plot.setYRange(0, 100)
-    data_line = plot.plot(pen='y')
+    window = MainWindow()
+    window.show()
+
+    #Microphone ON
+    stream.start()
 
     #Timer for updates
     timer = QtCore.QTimer()
