@@ -12,6 +12,7 @@ inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]
 #Byte handling variables
 last1 = last2 = last3 = last4 = lastP = []
 lastParity = 0
+bitStream = []
 
 
 '''
@@ -31,13 +32,45 @@ stream = sd.InputStream(
     blocksize=chunkSize
 )
 
-#DEBUG quitting the
+def bits_to_bytes(bit_stream):
+    '''
+    Turns a list of bits into a byte
+    '''
+    result = bytearray()
+
+    for bits in bit_stream:
+        data_bits = bits[:-1]  # drop parity bit
+        byte = int("".join(map(str, data_bits)), 2)
+        result.append(byte)
+
+    return result    
+
+#DEBUG quitting the program with q and saving with s
 class MainWindow(QtWidgets.QWidget):
     def keyPressEvent(self, event):
         if event.key() == QtCore.Qt.Key.Key_Q:
             stream.stop()
             stream.close()
+            #print(bitStream)
             QtWidgets.QApplication.quit()
+
+        elif event.key() == QtCore.Qt.Key.Key_S:
+            stream.stop()
+            stream.close()
+
+            self.save_png()
+
+            QtWidgets.QApplication.quit()
+
+    def save_png(self):
+        global bitStream 
+
+        data = bits_to_bytes(bitStream)
+
+        with open("./assets/output.png", "wb") as f:
+            f.write(data)
+
+        print("Saved output.png")
 
 # https://every-algorithm.github.io/2025/06/25/goertzel_algorithm.html
 def goertzel(samples, target_freq, sample_rate):
@@ -73,7 +106,7 @@ def getData():
     return powers
     
 def update():
-    global last1, last2, last3, last4, lastP, lastParity
+    global last1, last2, last3, last4, lastP, lastParity, bitStream
     #Timer handler
     data = getData()
 
@@ -94,13 +127,20 @@ def update():
     match = next((v for v in values if values.count(v) >= 3), None)
 
     if match is not None and lastP != p and lastParity != parity :
-        print(p)
         lastP = p
         lastParity = parity
 
 
+        #DEBUG
+        #print(p)
+
+        bitStream.append(p)
+
+
     #DEBUG
     #print(p)
+
+
 
 def main():
     app = QtWidgets.QApplication([])
