@@ -47,7 +47,7 @@ def goertzel(samples, target_freq, sample_rate):
     s_prev = 0.0
     s_prev2 = 0.0
     for sample in samples:
-        s = sample - coeff * s_prev - s_prev2
+        s = sample + coeff * s_prev - s_prev2
         s_prev2 = s_prev
         s_prev = s
     power = s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
@@ -63,16 +63,15 @@ def getData():
 
     # Windowing using hanning
     windowed = samples * np.hanning(len(samples))
-    
-    powers = [goertzel(windowed, f, sampleRate) for f in inputFreqs]
 
+    powers = [goertzel(windowed, f, sampleRate) for f in inputFreqs]
     return powers
     
 def update():
     #Timer handler
     data = getData()
     #DEBUG
-    print(data)
+    print([round(float(x), 0) for x in data])
 
 def main():
     app = QtWidgets.QApplication([])
