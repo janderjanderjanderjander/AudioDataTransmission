@@ -39,7 +39,10 @@ def bits_to_bytes(bit_stream):
     result = bytearray()
 
     for bits in bit_stream:
-        data_bits = bits[:-1]  # drop parity bit
+        # drop parity
+        data_bits = bits[:-1]
+        # reverse cause MSB and LSB are reversed  
+        data_bits = data_bits[::-1]
         byte = int("".join(map(str, data_bits)), 2)
         result.append(byte)
 
