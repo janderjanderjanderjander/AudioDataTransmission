@@ -1,36 +1,61 @@
 import sounddevice as sd
 import scipy
 import numpy as np
+import os
+import datetime
 
-sr = 44100
-duration = 0.025
+def freq_keying(filepath):
+    sr = 48000
+    duration = 0.3
 
-t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
 
-fbyte = [110.0, 220.0, 440.0, 880.0, 1760.0, 3520.0, 7040.0, 14080.0]
-audio = np.array([np.sin(2 * np.pi * f * t) for f in fbyte])
+    start = 1000.0 #Madalaim sagedus
+    delta = 100.0 #Kahe sageduse vahe
+    n = 9          #Mitu sageduskomponenti me lisame (9-s on nö clock)
 
-fgap = 678.0
-audiogap = .5 * np.sin(2 * np.pi * fgap * t)
+    inputFreqs = start + delta * np.arange(n)
+    audio = np.array([np.sin(2 * np.pi * f * t) for f in inputFreqs])
 
-with open("projectDesc.png", "rb") as image:
-    f = image.read()
-    counter = 0
-    totalaudio = np.zeros(0)
+    gap = np.zeros(int(sr * duration))
 
-    for byte in bytearray(f):
-        print("{:08b}".format(byte))
-        bytearr = np.zeros(t.size)
-        for bit in range(8):
-            if ((byte >> bit) & 1):
-                bytearr += audio[bit]
+    with open(filepath, "rb") as file:
+        f = file.read()
 
-        totalaudio = np.append(totalaudio, (bytearr, audiogap))
-        counter += 1
+        print(f"Saatimine võtab {str(datetime.timedelta(seconds=duration*os.path.getsize(filepath)))}")
+        input("Vajuta jätkamiseks...")
+        
+        counter = 0
 
-        if (counter % 200 == 0):
-            print("Playing!")
-            #scipy.io.wavfile.write("temp.wav", sr, totalaudio)
-            sd.play(totalaudio, sr)
-            sd.wait()
-            totalaudio = np.zeros(0)
+        totalaudio = np.zeros(0)
+
+        for byte in bytearray(f):
+            print("{:08b}".format(byte))
+            
+            bytearr = np.zeros(t.size)
+            for bit in range(8):
+                if ((byte >> bit) & 1):
+                    bytearr += audio[bit]
+
+            #TODO: fix parity bit
+            #right now it just does  0 1 0 1 0 1 and receiver checks it.
+            if counter % 2 == 0:
+                bytearr += audio[-1]
+            
+            totalaudio = np.append(totalaudio, bytearr)
+            #totalaudio = np.append(totalaudio, gap)
+            
+            counter += 1
+
+            if (counter % 1000 == 0):
+                print("Playing!")
+                scipy.io.wavfile.write("temp.wav", sr, totalaudio)
+                break
+                sd.play(totalaudio, sr)
+                sd.wait()
+                totalaudio = np.zeros(0)
+
+    print("End of file!")
+    scipy.io.wavfile.write("temp.wav", sr, totalaudio)
+
+freq_keying("common/pics/test.png")
