@@ -1,139 +1,204 @@
 import numpy as np
 import pyqtgraph as pg
 import sounddevice as sd
-from pyqtgraph.Qt import QtWidgets, QtCore
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout
+from PyQt6.QtCore import QTimer
 
-sampleRate = 48000 # Hz
-chunkSize = 480 # Δf = 10 Hz
-cutoffLine = 3
+class ReceiverWidget(QWidget):
+    def __init__(self):
+        super().__init__()
 
-start = 1000.0 #Madalaim sagedus
-delta = 100.0 #Kahe sageduse vahe
-n = 9          #Mitu sageduskomponenti me lisame (9-s on nö clock)
+        self.sampleRate = 44100
+        self.chunkSize = 2048
 
-inputFreqs = start + delta * np.arange(n)
+        self.stream = sd.InputStream(
+            samplerate=self.sampleRate,
+            channels=1, # Mono
+            blocksize=self.chunkSize
+        )
 
-clock = 0
-last_clock = 0
+        layout = QVBoxLayout()
+        label = QLabel("Receiver")
+        layout.addWidget(label)
 
-frame_buffer = []
-BUFFER_SIZE = 4
+        plotsLayout = QHBoxLayout()
 
-bitStream = []
+        self.plot1 = pg.PlotWidget()
+        self.plot2 = pg.PlotWidget()
+
+        plotsLayout.addWidget(self.plot1)
+        plotsLayout.addWidget(self.plot2)
+
+        self.plot1.setYRange(-1, 1)
+
+        layout.addLayout(plotsLayout)
+        self.setLayout(layout)
+
+        self.dataLine = self.plot1.plot(pen='y')
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update)        
+
+    def startListening(self):
+        self.stream.start()
+        self.timer.start(30)
 
 
-'''
-if 
-    sampleRate = 48000 # Hz
-    chunkSize = 4800 # Δf = 10 Hz
-then
-    1000 Hz → bin 100
-    2000 Hz → bin 200
-    3000 Hz → bin 300
-'''
+    def getData(self):
+        samples, overflowed = self.stream.read(self.chunkSize)
 
-# Conigure input.
-stream = sd.InputStream(
-    samplerate=sampleRate,
-    channels=1, # Mono
-    blocksize=chunkSize
-)
+        if overflowed:
+            print("ERROR: Overflow")
 
-def bits_to_bytes(bit_stream):
-    '''
-    Turns a list of bits into a byte
-    '''
-    result = bytearray()
+        return samples.flatten()
 
-    for bits in bit_stream:
-        # drop parity
-        data_bits = bits[:-1]
-        # reverse cause MSB and LSB are reversed  
-        data_bits = data_bits[::-1]
-        byte = int("".join(map(str, data_bits)), 2)
-        result.append(byte)
+    def update(self):
+        data = self.getData()
 
-    return result    
+        self.dataLine.setData(data)
 
-#DEBUG quitting the program with q and saving with s
-class MainWindow(QtWidgets.QWidget):
-    def keyPressEvent(self, event):
-        if event.key() == QtCore.Qt.Key.Key_Q:
-            stream.stop()
-            stream.close()
 
-            QtWidgets.QApplication.quit()
 
-        elif event.key() == QtCore.Qt.Key.Key_S:
-            stream.stop()
-            stream.close()
 
-            QtWidgets.QApplication.quit()
 
-            self.save_png()
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # cutoffLine = 3
+        # start = 1000.0 #Madalaim sagedus
+        # delta = 100.0 #Kahe sageduse vahe
+        # n = 9          #Mitu sageduskomponenti me lisame (9-s on nö clock)
+        # clock = 0
+        # last_clock = 0
+        # BUFFER_SIZE = 4
+        # frame_buffer = []
+        # bitStream = []
+
+        # inputFreqs = start + delta * np.arange(n)
+#     def bits_to_bytes(bit_stream):
+#         '''
+#         Turns a list of bits into a byte
+#         '''
+#         result = bytearray()
+
+#         for bits in bit_stream:
+#             # drop parity
+#             data_bits = bits[:-1]
+#             # reverse cause MSB and LSB are reversed  
+#             data_bits = data_bits[::-1]
+#             byte = int("".join(map(str, data_bits)), 2)
+#             result.append(byte)
+
+#         return result
+
+#     def save_png(self):
+#         global bitStream 
+
+#         data = bits_to_bytes(bitStream)
+
+#         with open("./common/pics/output.png", "wb") as f:
+#             f.write(data)
+
+#         print("Saved output.png")    
+
+#     def getData():
+#         #Get one chunk of data
+#         samples, overflowed = stream.read(chunkSize)
+#         if overflowed:
+#             print("ERROR: Overflow")
+#         samples = samples.flatten() # Convert 1xI into Ix1
+
+#         # Windowing using hanning
+#         windowed = samples * np.hanning(len(samples))
+
+#         fft = np.fft.fft(windowed)
+#         powers = abs(fft)[(inputFreqs / (sampleRate / chunkSize)).astype(np.int16)]
+
+#         return powers
+
+#     def startListening(self):
+
+
+
+
+#         '''
+#         if 
+#             sampleRate = 48000 # Hz
+#             chunkSize = 4800 # Δf = 10 Hz
+#         then
+#             1000 Hz → bin 100
+#             2000 Hz → bin 200
+#             3000 Hz → bin 300
+#         '''
+
+# #DEBUG quitting the program with q and saving with s
+# # class MainWindow(QtWidgets.QWidget):
+# #     def keyPressEvent(self, event):
+# #         if event.key() == QtCore.Qt.Key.Key_Q:
+# #             stream.stop()
+# #             stream.close()
+
+# #             QtWidgets.QApplication.quit()
+
+# #         elif event.key() == QtCore.Qt.Key.Key_S:
+# #             stream.stop()
+# #             stream.close()
+
+# #             QtWidgets.QApplication.quit()
+
+# #             self.save_png()
 
             
 
-    def save_png(self):
-        global bitStream 
 
-        data = bits_to_bytes(bitStream)
 
-        with open("./common/pics/output.png", "wb") as f:
-            f.write(data)
 
-        print("Saved output.png")
-
-def getData():
-    #Get one chunk of data
-    samples, overflowed = stream.read(chunkSize)
-    if overflowed:
-        print("ERROR: Overflow")
-    samples = samples.flatten() # Convert 1xI into Ix1
-
-    # Windowing using hanning
-    windowed = samples * np.hanning(len(samples))
-
-    fft = np.fft.fft(windowed)
-    powers = abs(fft)[(inputFreqs / (sampleRate / chunkSize)).astype(np.int16)]
-
-    return powers
     
-def update():
-    global clock, last_clock, bitStream
-    #Timer handler
-    data = getData()
+# def update():
+#     global clock, last_clock, bitStream
+#     #Timer handler
+#     data = getData()
 
-    p = [1 if x > cutoffLine else 0 for x in data]
+#     p = [1 if x > cutoffLine else 0 for x in data]
 
-    clock = p[-1]
+#     clock = p[-1]
 
-    if clock !=  last_clock:
-        #print(data, p)
+#     if clock !=  last_clock:
+#         #print(data, p)
 
-        print(hex(int("".join(map(str, p[:-1][::-1])), 2)))
+#         print(hex(int("".join(map(str, p[:-1][::-1])), 2)))
 
-        bitStream.append(p)
+#         bitStream.append(p)
         
-        last_clock = clock
+#         last_clock = clock
 
 
 
-def main():
-    app = QtWidgets.QApplication([])
-    window = MainWindow()
-    window.show()
+# def main():
+#     app = QtWidgets.QApplication([])
+#     window = MainWindow()
+#     window.show()
 
-    #Microphone ON
-    stream.start()
+#     #Microphone ON
+#     stream.start()
 
-    #Timer for updates
-    timer = QtCore.QTimer()
-    timer.timeout.connect(update)
-    #inteval needs to be faster than chunkSize / sampleRate, which is how fast data comes in. Right now it's 46.4 ms
-    timer.start(10)
+#     #Timer for updates
+#     timer = QtCore.QTimer()
+#     timer.timeout.connect(update)
+#     #inteval needs to be faster than chunkSize / sampleRate, which is how fast data comes in. Right now it's 46.4 ms
+#     timer.start(10)
 
-    app.exec()
+#     app.exec()
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
