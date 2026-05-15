@@ -10,6 +10,7 @@ class ReceiverWidget(QWidget):
 
         self.sampleRate = 44100
         self.chunkSize = 2048
+        self.cutoffLine = 40
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -30,11 +31,14 @@ class ReceiverWidget(QWidget):
         plotsLayout.addWidget(self.plot2)
 
         self.plot1.setYRange(-1, 1)
+        self.plot2.setYRange(0, 200)
+
 
         layout.addLayout(plotsLayout)
         self.setLayout(layout)
 
         self.dataLine = self.plot1.plot(pen='y')
+        self.dataLine2 = self.plot2.plot(pen='y')
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)        
@@ -44,18 +48,40 @@ class ReceiverWidget(QWidget):
         self.timer.start(30)
 
 
-    def getData(self):
+    def getData(self, freq=0):
         samples, overflowed = self.stream.read(self.chunkSize)
 
         if overflowed:
             print("ERROR: Overflow")
 
+        samples = samples.flatten()
+
+        if freq == 1:
+
+            windowed = samples * np.hanning(len(samples))
+            freqDom = np.fft.rfft(windowed)
+            magnitudes = np.abs(freqDom) #magnitudes
+            xAxis = np.fft.rfftfreq(len(samples), d=1/self.sampleRate)
+
+            #detect peaks
+            largestPeaks = np.argsort(magnitudes)[::-1]
+            #filter off from cutoff
+            valid = []
+            for i in largestPeaks[:7]:
+                if magnitudes[i] > self.cutoffLine:
+                    valid.append(i)
+            peakFreqs = xAxis[valid]
+            print(peakFreqs)
+            return magnitudes
+
         return samples.flatten()
 
     def update(self):
         data = self.getData()
+        fData = self.getData(freq=1)
 
         self.dataLine.setData(data)
+        self.dataLine2.setData(fData)
 
 
 
