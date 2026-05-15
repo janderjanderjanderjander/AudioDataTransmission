@@ -124,7 +124,8 @@ class SenderWidget(QWidget):
     def closeEvent(self, event):
         self.stop_tone()
         event.accept()
-
+        
+    
 
 
 

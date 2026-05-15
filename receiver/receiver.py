@@ -11,6 +11,7 @@ class ReceiverWidget(QWidget):
         self.sampleRate = 44100
         self.chunkSize = 2048
         self.cutoffLine = 40
+        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -26,19 +27,22 @@ class ReceiverWidget(QWidget):
 
         self.plot1 = pg.PlotWidget()
         self.plot2 = pg.PlotWidget()
+        self.plot3 = pg.PlotWidget()
 
         plotsLayout.addWidget(self.plot1)
         plotsLayout.addWidget(self.plot2)
+        plotsLayout.addWidget(self.plot3)
 
         self.plot1.setYRange(-1, 1)
         self.plot2.setYRange(0, 200)
-
+        self.plot3.setYRange(0, 1)
 
         layout.addLayout(plotsLayout)
         self.setLayout(layout)
 
         self.dataLine = self.plot1.plot(pen='y')
         self.dataLine2 = self.plot2.plot(pen='y')
+        self.dataLine3 = self.plot3.plot(pen='y')
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)        
@@ -48,7 +52,7 @@ class ReceiverWidget(QWidget):
         self.timer.start(30)
 
 
-    def getData(self, freq=0):
+    def getData(self, option=0):
         samples, overflowed = self.stream.read(self.chunkSize)
 
         if overflowed:
@@ -56,32 +60,48 @@ class ReceiverWidget(QWidget):
 
         samples = samples.flatten()
 
-        if freq == 1:
-
+        if option == 1:
             windowed = samples * np.hanning(len(samples))
             freqDom = np.fft.rfft(windowed)
             magnitudes = np.abs(freqDom) #magnitudes
-            xAxis = np.fft.rfftfreq(len(samples), d=1/self.sampleRate)
-
-            #detect peaks
-            largestPeaks = np.argsort(magnitudes)[::-1]
-            #filter off from cutoff
-            valid = []
-            for i in largestPeaks[:7]:
-                if magnitudes[i] > self.cutoffLine:
-                    valid.append(i)
-            peakFreqs = xAxis[valid]
-            print(peakFreqs)
             return magnitudes
+
+        if option == 2:
+            windowed = samples * np.hanning(len(samples))
+            powers = [self.goertzel(windowed, f, self.sampleRate) for f in self.inputFreqs]
+            return powers
 
         return samples.flatten()
 
     def update(self):
         data = self.getData()
-        fData = self.getData(freq=1)
+        fData = self.getData(option=1)
+        gData = self.getData(option=2)
+        print(gData)
 
         self.dataLine.setData(data)
         self.dataLine2.setData(fData)
+        self.dataLine3.setData(gData)
+
+    # https://every-algorithm.github.io/2025/06/25/goertzel_algorithm.html
+    def goertzel(self, samples, target_freq, sample_rate):
+        """
+        Compute the magnitude of the frequency component at target_freq
+        in the given samples using the Goertzel algorithm.
+        """
+        N = len(samples)
+        k = int(0.5 + (N * target_freq / sample_rate))
+        omega = 2.0 * np.pi * k / N
+        coeff = 2.0 * np.cos(omega)
+        s_prev = 0.0
+        s_prev2 = 0.0
+        for sample in samples:
+            s = sample + coeff * s_prev - s_prev2
+            s_prev2 = s_prev
+            s_prev = s
+        power = s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
+        magnitude = np.sqrt(power)
+        return magnitude
 
 
 
