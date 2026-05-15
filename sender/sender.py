@@ -16,6 +16,130 @@ class SenderWidget(QWidget):
 
         self.setLayout(layout)
     
+import sys
+import numpy as np
+import sounddevice as sd
+
+from PyQt6.QtWidgets import (
+    QApplication,
+    QWidget,
+    QLabel,
+    QVBoxLayout,
+    QLineEdit,
+    QPushButton,
+)
+
+
+class SenderWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Sender")
+
+        self.sample_rate = 48000
+        self.is_playing = False
+        self.stream = None
+        self.phase = 0.0
+
+        self.layout = QVBoxLayout()
+
+        label = QLabel("Sender")
+        self.layout.addWidget(label)
+
+        # Main layout only
+        self.setLayout(self.layout)
+
+        # Debug widgets are not created yet
+        self.debug_created = False
+
+    def create_debug_audio_controls(self):
+        """
+        Creates the debug tone generator UI.
+        Call this only when needed.
+        """
+
+        if self.debug_created:
+            return
+
+        self.debug_created = True
+
+        self.freq_label = QLabel("Frequency (Hz)")
+        self.layout.addWidget(self.freq_label)
+
+        self.freq_input = QLineEdit()
+        self.freq_input.setPlaceholderText("1000")
+        self.freq_input.setText("1000")
+        self.layout.addWidget(self.freq_input)
+
+        self.toggle_button = QPushButton("Start Tone")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.clicked.connect(self.toggle_tone)
+        self.layout.addWidget(self.toggle_button)
+
+    def audio_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+
+        try:
+            freq = float(self.freq_input.text())
+        except ValueError:
+            freq = 1000.0
+
+        t = (np.arange(frames) + self.phase) / self.sample_rate
+
+        wave = 0.2 * np.sin(2 * np.pi * freq * t)
+
+        outdata[:] = wave.reshape(-1, 1)
+
+        self.phase += frames
+        self.phase %= self.sample_rate
+
+    def toggle_tone(self):
+        if not self.is_playing:
+            self.start_tone()
+        else:
+            self.stop_tone()
+
+    def start_tone(self):
+        self.stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=1,
+            callback=self.audio_callback,
+        )
+
+        self.stream.start()
+
+        self.is_playing = True
+        self.toggle_button.setText("Stop Tone")
+
+    def stop_tone(self):
+        if self.stream is not None:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
+
+        self.is_playing = False
+        self.toggle_button.setText("Start Tone")
+
+    def closeEvent(self, event):
+        self.stop_tone()
+        event.accept()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def freq_keying(filepath):
         sr = 48000
         duration = 0.3
