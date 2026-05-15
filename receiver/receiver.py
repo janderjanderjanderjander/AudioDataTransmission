@@ -1,7 +1,7 @@
 import numpy as np
 import pyqtgraph as pg
 import sounddevice as sd
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt6.QtCore import QTimer
 
 class ReceiverWidget(QWidget):
@@ -11,7 +11,24 @@ class ReceiverWidget(QWidget):
         self.sampleRate = 44100
         self.chunkSize = 2048
         self.cutoffLine = 40
-        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000]
+        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000]
+
+        #For goertzel
+        self.freqGain = {
+            1000: 2.0,
+            2000: 1.4,
+            3000: 3,
+            4000: 1.0,
+            5000: 1.0,
+            7000: 1.0,
+            8000: 1.5,
+            9000: 1.0,
+            10000: 1.0,
+            11000: 2.0,
+            12000: 1.0,
+            13000: 1.0,
+            14000: 1.5
+        }
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -35,7 +52,7 @@ class ReceiverWidget(QWidget):
 
         self.plot1.setYRange(-1, 1)
         self.plot2.setYRange(0, 200)
-        self.plot3.setYRange(0, 1)
+        self.plot3.setYRange(0, 3)
 
         layout.addLayout(plotsLayout)
         self.setLayout(layout)
@@ -44,13 +61,60 @@ class ReceiverWidget(QWidget):
         self.dataLine2 = self.plot2.plot(pen='y')
         self.dataLine3 = self.plot3.plot(pen='y')
 
+        self.messageLabel = QLabel("No bytes yet")
+        layout.addWidget(self.messageLabel)
+
+        # Gain controls
+        gainContainer = QWidget()
+        gainLayout = QGridLayout()
+
+        self.gainInputs = {}
+
+        for row, freq in enumerate(self.inputFreqs):
+            freqLabel = QLabel(f"{freq} Hz")
+
+            gainInput = QLineEdit(str(self.freqGain.get(freq, 1.0)))
+            gainInput.setFixedWidth(60)
+
+            updateBtn = QPushButton("Update")
+
+            # store reference
+            self.gainInputs[freq] = gainInput
+
+            # connect button
+            updateBtn.clicked.connect(
+                lambda checked=False, f=freq: self.updateGain(f)
+            )
+
+            gainLayout.addWidget(freqLabel, row, 0)
+            gainLayout.addWidget(gainInput, row, 1)
+            gainLayout.addWidget(updateBtn, row, 2)
+
+        gainContainer.setLayout(gainLayout)
+        layout.addWidget(gainContainer)
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)        
+
+    def updateGain(self, freq):
+        try:
+            value = float(self.gainInputs[freq].text())
+            self.freqGain[freq] = value
+            print(f"Updated {freq} Hz gain -> {value}")
+        except ValueError:
+            print(f"Invalid gain value for {freq} Hz")
+
+    def setMessage(self, text):
+        self.messageLabel.setText(text)
 
     def startListening(self):
         self.stream.start()
         self.timer.start(30)
 
+    def updateByte(self, gData):
+
+        result = [0 if x < 1 else round(x, 2) for x in gData]
+        self.setMessage(str(result))
 
     def getData(self, option=0):
         samples, overflowed = self.stream.read(self.chunkSize)
@@ -77,11 +141,13 @@ class ReceiverWidget(QWidget):
         data = self.getData()
         fData = self.getData(option=1)
         gData = self.getData(option=2)
-        print(gData)
 
         self.dataLine.setData(data)
         self.dataLine2.setData(fData)
         self.dataLine3.setData(gData)
+
+        self.updateByte(gData)
+
 
     # https://every-algorithm.github.io/2025/06/25/goertzel_algorithm.html
     def goertzel(self, samples, target_freq, sample_rate):
@@ -101,7 +167,10 @@ class ReceiverWidget(QWidget):
             s_prev = s
         power = s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
         magnitude = np.sqrt(power)
-        return magnitude
+
+        adjustedMagnitude = magnitude * self.freqGain.get(target_freq, 1.0)
+
+        return adjustedMagnitude
 
 
 
