@@ -13,6 +13,10 @@ class ReceiverWidget(QWidget):
         self.cutoffLine = 40
         self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000]
 
+        #Hamming
+        self.parityPositions = {1, 2, 4, 8} 
+        self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
+
         #For goertzel
         self.freqGain = {
             1000: 2.0,
@@ -27,7 +31,9 @@ class ReceiverWidget(QWidget):
             11000: 2.0,
             12000: 1.0,
             13000: 1.0,
-            14000: 1.5
+            14000: 1.5,
+            15000: 1.0,
+            16000: 1.0
         }
 
         self.stream = sd.InputStream(
@@ -112,9 +118,42 @@ class ReceiverWidget(QWidget):
         self.timer.start(30)
 
     def updateByte(self, gData):
+        '''
+        Takes data as input
+        Applies single error fix 
+        If data passes filter, set message to it.
+        Using hamming(15,11) noise filtering. Includes 4 parity bits which can fix 1 bit errors
+        '''
 
-        result = [0 if x < 1 else round(x, 2) for x in gData]
-        self.setMessage(str(result))
+        hamming15 = [0 if x < 1 else 1 for x in gData] # Normalize to 0 and 1
+
+        # See if any errors
+        syndrome = 0
+        for p in sorted(self.parityPositions): # {1, 2, 4, 8} 
+            covered = []
+            for pos in range(1, 16):      # pos = 1, 2, 3, ... 15
+                if pos & p:                # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
+                    covered.append(hamming15[pos - 1])  # grab the bit value at that position
+            result = 0
+            for bit in covered: #or everything to see if any problems.
+                result = result ^ bit
+            if result != 0: #if problems, add to syndrome
+                syndrome += p
+
+        # Unfixable
+        if syndrome > 15:
+            print("SYNDROME OB")
+
+        # Single error fix
+        elif syndrome != 0:
+            corrected = gData
+            corrected[syndrome - 1] ^= 1
+            self.setMessage(str(corrected))
+
+        # All good
+        else:
+            self.setMessage(str(hamming15))
+
 
     def getData(self, option=0):
         samples, overflowed = self.stream.read(self.chunkSize)
@@ -172,148 +211,3 @@ class ReceiverWidget(QWidget):
 
         return adjustedMagnitude
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # cutoffLine = 3
-        # start = 1000.0 #Madalaim sagedus
-        # delta = 100.0 #Kahe sageduse vahe
-        # n = 9          #Mitu sageduskomponenti me lisame (9-s on nö clock)
-        # clock = 0
-        # last_clock = 0
-        # BUFFER_SIZE = 4
-        # frame_buffer = []
-        # bitStream = []
-
-        # inputFreqs = start + delta * np.arange(n)
-#     def bits_to_bytes(bit_stream):
-#         '''
-#         Turns a list of bits into a byte
-#         '''
-#         result = bytearray()
-
-#         for bits in bit_stream:
-#             # drop parity
-#             data_bits = bits[:-1]
-#             # reverse cause MSB and LSB are reversed  
-#             data_bits = data_bits[::-1]
-#             byte = int("".join(map(str, data_bits)), 2)
-#             result.append(byte)
-
-#         return result
-
-#     def save_png(self):
-#         global bitStream 
-
-#         data = bits_to_bytes(bitStream)
-
-#         with open("./common/pics/output.png", "wb") as f:
-#             f.write(data)
-
-#         print("Saved output.png")    
-
-#     def getData():
-#         #Get one chunk of data
-#         samples, overflowed = stream.read(chunkSize)
-#         if overflowed:
-#             print("ERROR: Overflow")
-#         samples = samples.flatten() # Convert 1xI into Ix1
-
-#         # Windowing using hanning
-#         windowed = samples * np.hanning(len(samples))
-
-#         fft = np.fft.fft(windowed)
-#         powers = abs(fft)[(inputFreqs / (sampleRate / chunkSize)).astype(np.int16)]
-
-#         return powers
-
-#     def startListening(self):
-
-
-
-
-#         '''
-#         if 
-#             sampleRate = 48000 # Hz
-#             chunkSize = 4800 # Δf = 10 Hz
-#         then
-#             1000 Hz → bin 100
-#             2000 Hz → bin 200
-#             3000 Hz → bin 300
-#         '''
-
-# #DEBUG quitting the program with q and saving with s
-# # class MainWindow(QtWidgets.QWidget):
-# #     def keyPressEvent(self, event):
-# #         if event.key() == QtCore.Qt.Key.Key_Q:
-# #             stream.stop()
-# #             stream.close()
-
-# #             QtWidgets.QApplication.quit()
-
-# #         elif event.key() == QtCore.Qt.Key.Key_S:
-# #             stream.stop()
-# #             stream.close()
-
-# #             QtWidgets.QApplication.quit()
-
-# #             self.save_png()
-
-            
-
-
-
-
-    
-# def update():
-#     global clock, last_clock, bitStream
-#     #Timer handler
-#     data = getData()
-
-#     p = [1 if x > cutoffLine else 0 for x in data]
-
-#     clock = p[-1]
-
-#     if clock !=  last_clock:
-#         #print(data, p)
-
-#         print(hex(int("".join(map(str, p[:-1][::-1])), 2)))
-
-#         bitStream.append(p)
-        
-#         last_clock = clock
-
-
-
-# def main():
-#     app = QtWidgets.QApplication([])
-#     window = MainWindow()
-#     window.show()
-
-#     #Microphone ON
-#     stream.start()
-
-#     #Timer for updates
-#     timer = QtCore.QTimer()
-#     timer.timeout.connect(update)
-#     #inteval needs to be faster than chunkSize / sampleRate, which is how fast data comes in. Right now it's 46.4 ms
-#     timer.start(10)
-
-#     app.exec()
-
-# if __name__ == "__main__":
-#     main()
