@@ -4,6 +4,7 @@ import scipy
 import datetime
 import numpy as np
 import sounddevice as sd
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
 
 
@@ -38,6 +39,7 @@ class SenderWidget(QWidget):
 
         #Debugging tools
         self.hammingDebug = 0
+        self.calibration = 1
 
         self.setWindowTitle("Sender")
 
@@ -85,6 +87,20 @@ class SenderWidget(QWidget):
             self.symbolBTN.clicked.connect(self.toggleSymbol)
             mainLayout.addWidget(self.symbolBTN)
 
+        elif self.calibration == 1:
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.calibrate)
+            self.calibIndex = 0
+
+            label = QLabel("Start playing - This need to be pressed at the same time as receiver")
+            mainLayout.addWidget(label)
+
+
+            self.calibBTN = QPushButton("Start")
+            self.calibBTN.clicked.connect(self.startCalibration)
+            mainLayout.addWidget(self.calibBTN)
+
+
         else:
             #TODO: Send pic
             '''
@@ -118,6 +134,22 @@ class SenderWidget(QWidget):
 
         self.setLayout(mainLayout)
 
+    def startCalibration(self):
+        self.timer.start(100)
+
+    def calibrate(self):
+        #check if were done
+        if self.calibIndex >= len(self.outputFreqs):
+            self.timer.stop()
+            self.stop_tone()
+            print("Calibration tones complete.")
+        else:
+            freq = self.outputFreqs[self.calibIndex]
+            self.start_tone(freq)
+            self.calibIndex += 1
+            self.timer.setInterval(200)
+
+
     def onEncode(self):
         raw = self.dataInput.text().strip()
  
@@ -129,8 +161,7 @@ class SenderWidget(QWidget):
         if checked:
             raw = self.image
             data = [int(b) for b in raw]
-
-
+            self.encodedBits = self.encodeHamming(data)
 
 
 
@@ -171,6 +202,19 @@ class SenderWidget(QWidget):
     def closeEvent(self, event):
         self.stop_tone()
         event.accept()
+
+    def start_tone(self, freq):
+        
+        t = np.linspace(0, 1, self.sample_rate, endpoint=False)
+        wave = np.sin(2 * np.pi * freq * t).astype(np.float32)
+        
+        self.stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype='float32'
+        )
+        self.stream.start()
+        self.stream.write(wave)
 
     def stop_tone(self):
         if self.stream is not None:

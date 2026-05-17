@@ -11,6 +11,10 @@ class ReceiverWidget(QWidget):
         # Debugging variables
         self.gainDebug = 0
         self.graphDebug = 0
+        self.byteShowDebug = 0
+        #Calibration
+        self.calibration = 1
+        self.targetAmp = 10
 
         self.sampleRate = 44100
         self.chunkSize = 2048
@@ -103,12 +107,63 @@ class ReceiverWidget(QWidget):
             gainContainer.setLayout(gainLayout)
             layout.addWidget(gainContainer)
 
+        if self.byteShowDebug == 1:
+            self.setLayout(layout)
+            self.messageLabel = QLabel("No bytes yet")
+            layout.addWidget(self.messageLabel)
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.update)        
 
-        self.setLayout(layout)
-        self.messageLabel = QLabel("No bytes yet")
-        layout.addWidget(self.messageLabel)
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update)        
+        if self.calibration == 1:
+            # Amplitude calibration
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.calibrate)
+            self.state = "wait"
+            self.freqIndex = 0
+            self.calibMeasurements = []
+
+            label = QLabel("Start listening - This need to be pressed at the same time as sender")
+            mainLayout.addWidget(label)
+
+            self.calibBTN = QPushButton("Start")
+            self.calibBTN.clicked.connect(self.startCalibration)
+
+
+    def startCalibration(self):
+        self.timer.start(200)
+
+    def calibrate(self):
+        if self.state == "wait":
+            self.state = "measure"
+            return
+
+        if self.state == "measure":
+            #Measure the amplitude of frequency
+            count = 3
+            samples = []
+            while (count):
+                powers = self.getData(option=2)
+                samples.append(powers[self.freqIndex])
+                count -= 1
+            self.calibMeasurements.append(sum(samples) / 3)
+            self.freqIndex += 1
+            if self.freqIndex >= len(outputFreqs):
+                self.timer.stop()
+                self.finishCalibration()
+            else:
+                self.state = "wait"
+
+    def finishCalibration(self):
+        for i, freq in enumerate(outputFreqs):
+            avg = self.calibMeasurements[i]
+            self.freqGain[freq] = self.targetAmp / avg
+
+        gains_serializable = {str(k): v for k, v in self.freqGain.items()}
+        
+        with open("/common/config/calibrationGains.json", "w") as f:
+            json.dump(gains_serializable, f, indent=4)
+        
+        print("Calibration complete, gains saved.")
 
     def updateGain(self, freq):
         try:
