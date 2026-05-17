@@ -1,8 +1,9 @@
-import sounddevice as sd
-import scipy
-import numpy as np
 import os
+import cv2
+import scipy
 import datetime
+import numpy as np
+import sounddevice as sd
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
 
 
@@ -35,12 +36,16 @@ class SenderWidget(QWidget):
     def __init__(self):
         super().__init__()
 
+        #Debugging tools
+        self.hammingDebug = 0
+
         self.setWindowTitle("Sender")
 
         self.sample_rate = 48000
         self.is_playing = False
         self.stream = None
         self.phase = 0.0
+        self.image = None
 
         #Hamming
         self.parityPositions = {1, 2, 4, 8} 
@@ -54,30 +59,62 @@ class SenderWidget(QWidget):
         label = QLabel("Sender")
         mainLayout.addWidget(label)
 
-        # INPUT
-        InputLabel = QLabel("Enter 11 bits: ")
-        mainLayout.addWidget(InputLabel)
- 
-        self.dataInput = QLineEdit()
-        mainLayout.addWidget(self.dataInput)
+        if self.hammingDebug == 1:
+            # INPUT
+            InputLabel = QLabel("Enter 11 bits: ")
+            mainLayout.addWidget(InputLabel)
+    
+            self.dataInput = QLineEdit()
+            mainLayout.addWidget(self.dataInput)
 
-        # Encode button
-        self.encodeBTN = QPushButton("Encode (Hamming 15,11)")
-        self.encodeBTN.clicked.connect(self.onEncode)
-        mainLayout.addWidget(self.encodeBTN)
+            # Encode button
+            self.encodeBTN = QPushButton("Encode (Hamming 15,11)")
+            self.encodeBTN.clicked.connect(self.onEncode)
+            mainLayout.addWidget(self.encodeBTN)
 
-        # Encoded output
-        encodedCode = QHBoxLayout()
-        encodedCode.addWidget(QLabel("Encoded:"))
-        self.encodedLabel = QLabel("Encoded")
-        encodedCode.addWidget(self.encodedLabel)
-        mainLayout.addLayout(encodedCode)
+            # Encoded output
+            encodedCode = QHBoxLayout()
+            encodedCode.addWidget(QLabel("Encoded:"))
+            self.encodedLabel = QLabel("Encoded")
+            encodedCode.addWidget(self.encodedLabel)
+            mainLayout.addLayout(encodedCode)
 
-        # play button for encoded data
-        self.symbolBTN = QPushButton("Play Symbol")
-        self.symbolBTN.setCheckable(True)
-        self.symbolBTN.clicked.connect(self.toggleSymbol)
-        mainLayout.addWidget(self.symbolBTN)
+            # play button for encoded data
+            self.symbolBTN = QPushButton("Play Symbol")
+            self.symbolBTN.setCheckable(True)
+            self.symbolBTN.clicked.connect(self.toggleSymbol)
+            mainLayout.addWidget(self.symbolBTN)
+
+        else:
+            #TODO: Send pic
+            '''
+            Dimensions: 500x500, Channels: 3
+            Bits per channel: 8
+            Total bits: 6,000,000
+            '''
+            filePath = "common/pics/samplePicBlackNWhiteSmall.png"
+            self.image = cv2.imread(filePath)
+
+
+            toneInputLabel = QLabel("Tone length (ms)")
+            mainLayout.addWidget(toneInputLabel)
+            toneInput = QLineEdit()
+            mainLayout.addWidget(self.toneInput)
+
+            pauseInputLabel = QLabel("Pause length (ms)")
+            mainLayout.addWidget(pauseInputLabel)
+            pauseInput = QLineEdit()
+            mainLayout.addWidget(self.pauseInput)
+
+            preampleInputLabel = QLabel("Preample byte")
+            mainLayout.addWidget(preampleInputLabel)
+            preampleInput = QLineEdit()
+            mainLayout.addWidget(self.preampleInput)
+
+            self.pictureBTN = QPushButton("Play picture")
+            self.pictureBTN.setCheckable(True)
+            self.pictureBTN.clicked.connect(self.togglePicture)
+            mainLayout.addWidget(self.pictureBTN)
 
         self.setLayout(mainLayout)
 
@@ -87,6 +124,18 @@ class SenderWidget(QWidget):
         data = [int(b) for b in raw]
         self.encodedBits = self.encodeHamming(data)
         self.encodedLabel.setText("".join(str(b) for b in self.encodedBits))
+
+    def togglePicture(self, checked):
+        if checked:
+            raw = self.image
+            data = [int(b) for b in raw]
+
+
+
+
+
+        else:
+            self.stop_tone()
 
     def toggleSymbol(self, checked):
         if checked:
@@ -109,6 +158,7 @@ class SenderWidget(QWidget):
             self.is_playing = True
         else:
             self.stop_tone()
+
 
     def generateSignal(self, outdata, frames, time, status):
         t = (self.phase + np.arange(frames)) / self.sample_rate

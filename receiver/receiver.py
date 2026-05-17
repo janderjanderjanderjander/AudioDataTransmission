@@ -8,9 +8,13 @@ class ReceiverWidget(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Debugging variables
+        self.gainDebug = 0
+        self.graphDebug = 0
+
         self.sampleRate = 44100
         self.chunkSize = 2048
-        self.cutoffLine = 40
+        self.cutoffLine = 0.5
         self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
 
         #Hamming
@@ -22,18 +26,18 @@ class ReceiverWidget(QWidget):
             1000: 2.0,
             2000: 1.4,
             3000: 3,
-            4000: 1.0,
+            4000: 2.0,
             5000: 1.0,
+            6000: 1.5,
             7000: 1.0,
             8000: 1.5,
             9000: 1.0,
             10000: 1.0,
             11000: 2.0,
             12000: 1.0,
-            13000: 1.0,
+            13000: 2.0,
             14000: 1.5,
-            15000: 1.0,
-            16000: 1.0
+            15000: 5.0
         }
 
         self.stream = sd.InputStream(
@@ -46,59 +50,63 @@ class ReceiverWidget(QWidget):
         label = QLabel("Receiver")
         layout.addWidget(label)
 
-        plotsLayout = QHBoxLayout()
 
-        self.plot1 = pg.PlotWidget()
-        self.plot2 = pg.PlotWidget()
-        self.plot3 = pg.PlotWidget()
+        # Graphing controls
+        if self.graphDebug == 1:
+            plotsLayout = QHBoxLayout()
 
-        plotsLayout.addWidget(self.plot1)
-        plotsLayout.addWidget(self.plot2)
-        plotsLayout.addWidget(self.plot3)
+            self.plot1 = pg.PlotWidget()
+            self.plot2 = pg.PlotWidget()
+            self.plot3 = pg.PlotWidget()
 
-        self.plot1.setYRange(-1, 1)
-        self.plot2.setYRange(0, 200)
-        self.plot3.setYRange(0, 3)
+            plotsLayout.addWidget(self.plot1)
+            plotsLayout.addWidget(self.plot2)
+            plotsLayout.addWidget(self.plot3)
 
-        layout.addLayout(plotsLayout)
-        self.setLayout(layout)
+            self.plot1.setYRange(-1, 1)
+            self.plot2.setYRange(0, 200)
+            self.plot3.setYRange(0, 3)
 
-        self.dataLine = self.plot1.plot(pen='y')
-        self.dataLine2 = self.plot2.plot(pen='y')
-        self.dataLine3 = self.plot3.plot(pen='y')
+            layout.addLayout(plotsLayout)
 
-        self.messageLabel = QLabel("No bytes yet")
-        layout.addWidget(self.messageLabel)
+            self.dataLine = self.plot1.plot(pen='y')
+            self.dataLine2 = self.plot2.plot(pen='y')
+            self.dataLine3 = self.plot3.plot(pen='y')
 
         # Gain controls
-        gainContainer = QWidget()
-        gainLayout = QGridLayout()
+        if self.gainDebug == 1:
+            gainContainer = QWidget()
+            gainLayout = QGridLayout()
 
-        self.gainInputs = {}
+            self.gainInputs = {}
 
-        for row, freq in enumerate(self.inputFreqs):
-            freqLabel = QLabel(f"{freq} Hz")
+            for row, freq in enumerate(self.inputFreqs):
+                freqLabel = QLabel(f"{freq} Hz")
 
-            gainInput = QLineEdit(str(self.freqGain.get(freq, 1.0)))
-            gainInput.setFixedWidth(60)
+                gainInput = QLineEdit(str(self.freqGain.get(freq, 1.0)))
+                gainInput.setFixedWidth(60)
 
-            updateBtn = QPushButton("Update")
+                updateBtn = QPushButton("Update")
 
-            # store reference
-            self.gainInputs[freq] = gainInput
+                # store reference
+                self.gainInputs[freq] = gainInput
 
-            # connect button
-            updateBtn.clicked.connect(
-                lambda checked=False, f=freq: self.updateGain(f)
-            )
+                # connect button
+                updateBtn.clicked.connect(
+                    lambda checked=False, f=freq: self.updateGain(f)
+                )
 
-            gainLayout.addWidget(freqLabel, row, 0)
-            gainLayout.addWidget(gainInput, row, 1)
-            gainLayout.addWidget(updateBtn, row, 2)
+                gainLayout.addWidget(freqLabel, row, 0)
+                gainLayout.addWidget(gainInput, row, 1)
+                gainLayout.addWidget(updateBtn, row, 2)
 
-        gainContainer.setLayout(gainLayout)
-        layout.addWidget(gainContainer)
+            gainContainer.setLayout(gainLayout)
+            layout.addWidget(gainContainer)
 
+
+        self.setLayout(layout)
+        self.messageLabel = QLabel("No bytes yet")
+        layout.addWidget(self.messageLabel)
         self.timer = QTimer()
         self.timer.timeout.connect(self.update)        
 
@@ -125,7 +133,7 @@ class ReceiverWidget(QWidget):
         Using hamming(15,11) noise filtering. Includes 4 parity bits which can fix 1 bit errors
         '''
 
-        hamming15 = [0 if x < 1 else 1 for x in gData] # Normalize to 0 and 1
+        hamming15 = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
 
         # See if any errors
         syndrome = 0
@@ -146,7 +154,7 @@ class ReceiverWidget(QWidget):
 
         # Single error fix
         elif syndrome != 0:
-            corrected = gData
+            corrected = hamming15
             corrected[syndrome - 1] ^= 1
             self.setMessage(str(corrected))
 
@@ -181,9 +189,10 @@ class ReceiverWidget(QWidget):
         fData = self.getData(option=1)
         gData = self.getData(option=2)
 
-        self.dataLine.setData(data)
-        self.dataLine2.setData(fData)
-        self.dataLine3.setData(gData)
+        if self.graphDebug == 1:
+            self.dataLine.setData(data)
+            self.dataLine2.setData(fData)
+            self.dataLine3.setData(gData)
 
         self.updateByte(gData)
 
