@@ -47,8 +47,6 @@ class MainWindow(QWidget):
         self.clearLayout()
 
         sender = SenderWidget()
-        #sender.freq_keying()
-        sender.create_debug_audio_controls()
         
         self.layout.addWidget(sender)
 

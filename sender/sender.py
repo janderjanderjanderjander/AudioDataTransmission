@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QLineEdit,
     QPushButton,
+    QHBoxLayout,
 )
 
 
@@ -41,159 +42,114 @@ class SenderWidget(QWidget):
         self.stream = None
         self.phase = 0.0
 
-        self.layout = QVBoxLayout()
+        #Hamming
+        self.parityPositions = {1, 2, 4, 8} 
+        self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
+        self.encodedBits = None 
+        self.outputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+        self.activeFreqs = []
 
+        mainLayout = QVBoxLayout()
+        mainLayout.setSpacing(10)
         label = QLabel("Sender")
-        self.layout.addWidget(label)
+        mainLayout.addWidget(label)
 
-        # Main layout only
-        self.setLayout(self.layout)
+        # INPUT
+        InputLabel = QLabel("Enter 11 bits: ")
+        mainLayout.addWidget(InputLabel)
+ 
+        self.dataInput = QLineEdit()
+        mainLayout.addWidget(self.dataInput)
 
-        # Debug widgets are not created yet
-        self.debug_created = False
+        # Encode button
+        self.encodeBTN = QPushButton("Encode (Hamming 15,11)")
+        self.encodeBTN.clicked.connect(self.onEncode)
+        mainLayout.addWidget(self.encodeBTN)
 
-    def create_debug_audio_controls(self):
-        """
-        Creates the debug tone generator UI.
-        Call this only when needed.
-        """
+        # Encoded output
+        encodedCode = QHBoxLayout()
+        encodedCode.addWidget(QLabel("Encoded:"))
+        self.encodedLabel = QLabel("Encoded")
+        encodedCode.addWidget(self.encodedLabel)
+        mainLayout.addLayout(encodedCode)
 
-        if self.debug_created:
-            return
+        # play button for encoded data
+        self.symbolBTN = QPushButton("Play Symbol")
+        self.symbolBTN.setCheckable(True)
+        self.symbolBTN.clicked.connect(self.toggleSymbol)
+        mainLayout.addWidget(self.symbolBTN)
 
-        self.debug_created = True
+        self.setLayout(mainLayout)
 
-        self.freq_label = QLabel("Frequency (Hz)")
-        self.layout.addWidget(self.freq_label)
+    def onEncode(self):
+        raw = self.dataInput.text().strip()
+ 
+        data = [int(b) for b in raw]
+        self.encodedBits = self.encodeHamming(data)
+        self.encodedLabel.setText("".join(str(b) for b in self.encodedBits))
 
-        self.freq_input = QLineEdit()
-        self.freq_input.setPlaceholderText("1000")
-        self.freq_input.setText("1000")
-        self.layout.addWidget(self.freq_input)
+    def toggleSymbol(self, checked):
+        if checked:
 
-        self.toggle_button = QPushButton("Start Tone")
-        self.toggle_button.setCheckable(True)
-        self.toggle_button.clicked.connect(self.toggle_tone)
-        self.layout.addWidget(self.toggle_button)
+            # Frequencies that have 1
+            activeFreqs = []
+            for i in range(0, 15):
+                if self.encodedBits[i] == 1:
+                    activeFreqs.append(self.outputFreqs[i])
 
-    def audio_callback(self, outdata, frames, time, status):
-        if status:
-            print(status)
-
-        try:
-            freq = float(self.freq_input.text())
-        except ValueError:
-            freq = 1000.0
-
-        t = (np.arange(frames) + self.phase) / self.sample_rate
-
-        wave = 0.2 * np.sin(2 * np.pi * freq * t)
-
-        outdata[:] = wave.reshape(-1, 1)
-
-        self.phase += frames
-        self.phase %= self.sample_rate
-
-    def toggle_tone(self):
-        if not self.is_playing:
-            self.start_tone()
+            self.activeFreqs = activeFreqs
+            self.phase = 0.0
+            self.stream = sd.OutputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype='float32',
+                callback=self.generateSignal,
+            )
+            self.stream.start()
+            self.is_playing = True
         else:
             self.stop_tone()
 
-    def start_tone(self):
-        self.stream = sd.OutputStream(
-            samplerate=self.sample_rate,
-            channels=1,
-            callback=self.audio_callback,
-        )
+    def generateSignal(self, outdata, frames, time, status):
+        t = (self.phase + np.arange(frames)) / self.sample_rate
+        # Sum a sine wave for each active frequency, then normalise
+        signal = sum(np.sin(2 * np.pi * f * t) for f in self.activeFreqs)
+        signal = signal / max(len(self.activeFreqs), 1)   # prevent clipping
+        outdata[:, 0] = signal.astype(np.float32)
+        self.phase += frames
 
-        self.stream.start()
-
-        self.is_playing = True
-        self.toggle_button.setText("Stop Tone")
+    def closeEvent(self, event):
+        self.stop_tone()
+        event.accept()
 
     def stop_tone(self):
         if self.stream is not None:
             self.stream.stop()
             self.stream.close()
             self.stream = None
-
         self.is_playing = False
-        self.toggle_button.setText("Start Tone")
-
-    def closeEvent(self, event):
-        self.stop_tone()
-        event.accept()
+        self.symbolBTN.setChecked(False)
         
-    
+    def encodeHamming(self, data): 
+        '''
+        Turn 11 data bits into 15 bit hamming code.
+        Includes 4 parity bits capable of repairing 1 error.
+        '''
+        product = [0] * 15
+        for i, pos in enumerate(self.dataPositions): # Sets data bits into correct positions
+            product[pos - 1] = data[i]
 
+        for p in sorted(self.parityPositions):  # Go through each of the parity bit positions
+            covered = []
+            for pos in range(1, 16):        # pos = 1, 2, 3, ... 15
+                if pos != p:                # skip the parity bit itself
+                    if pos & p:             # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
+                        covered.append(product[pos - 1])
+            result = 0
+            for bit in covered:
+                result = result ^ bit       # XOR everything together
+            product[p - 1] = result        # set the parity bit to the result
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def freq_keying(filepath):
-        sr = 48000
-        duration = 0.3
-
-        t = np.linspace(0, duration, int(sr * duration), endpoint=False)
-
-        start = 1000.0 #Madalaim sagedus
-        delta = 100.0 #Kahe sageduse vahe
-        n = 9          #Mitu sageduskomponenti me lisame (9-s on nö clock)
-
-        inputFreqs = start + delta * np.arange(n)
-        audio = np.array([np.sin(2 * np.pi * f * t) for f in inputFreqs])
-
-        gap = np.zeros(int(sr * duration))
-        filepath = "/home/jander/School/DSP/projectDSP/common/pics/samplePicBlackNWhiteSmall.png"
-
-        with open(filepath, "rb") as file:
-            f = file.read()
-
-            print(f"Saatimine võtab {str(datetime.timedelta(seconds=duration*os.path.getsize(filepath)))}")
-            input("Vajuta jätkamiseks...")
-            
-            counter = 0
-
-            totalaudio = np.zeros(0)
-
-            for byte in bytearray(f):
-                print("{:08b}".format(byte))
-                
-                bytearr = np.zeros(t.size)
-                for bit in range(8):
-                    if ((byte >> bit) & 1):
-                        bytearr += audio[bit]
-
-                #TODO: fix parity bit
-                #right now it just does  0 1 0 1 0 1 and receiver checks it.
-                if counter % 2 == 0:
-                    bytearr += audio[-1]
-                
-                totalaudio = np.append(totalaudio, bytearr)
-                #totalaudio = np.append(totalaudio, gap)
-                
-                counter += 1
-
-                if (counter % 1000 == 0):
-                    print("Playing!")
-                    scipy.io.wavfile.write("temp.wav", sr, totalaudio)
-                    break
-                    sd.play(totalaudio, sr)
-                    sd.wait()
-                    totalaudio = np.zeros(0)
-
-        print("End of file!")
-        scipy.io.wavfile.write("temp.wav", sr, totalaudio)
+        return product
 
 

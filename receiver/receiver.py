@@ -11,7 +11,7 @@ class ReceiverWidget(QWidget):
         self.sampleRate = 44100
         self.chunkSize = 2048
         self.cutoffLine = 40
-        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000]
+        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
 
         #Hamming
         self.parityPositions = {1, 2, 4, 8} 
@@ -135,7 +135,7 @@ class ReceiverWidget(QWidget):
                 if pos & p:                # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
                     covered.append(hamming15[pos - 1])  # grab the bit value at that position
             result = 0
-            for bit in covered: #or everything to see if any problems.
+            for bit in covered: # or everything to see if any problems.
                 result = result ^ bit
             if result != 0: #if problems, add to syndrome
                 syndrome += p
