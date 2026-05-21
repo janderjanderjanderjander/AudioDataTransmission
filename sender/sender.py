@@ -72,12 +72,11 @@ class SenderWidget(QWidget):
             mainLayout.addWidget(self.symbolBTN)
 
         elif self.calibration == 1:
-            self.timer = QTimer()
-            self.timer.timeout.connect(self.calibrate)
+
             self.calibIndex = 0
 
-            self.calibBTN = QPushButton("Start playing - This need to be pressed at the same time as receiver")
-            self.calibBTN.clicked.connect(self.startCalibration)
+            self.calibBTN = QPushButton("Next note")
+            self.calibBTN.clicked.connect(self.calibrate)
             mainLayout.addWidget(self.calibBTN)
 
 
@@ -114,13 +113,9 @@ class SenderWidget(QWidget):
 
         self.setLayout(mainLayout)
 
-    def startCalibration(self):
-        self.timer.start(100)
-
-    def calibrate(self): # First run 100 ms after button, then 200 ms interval
+    def calibrate(self):
         #check if were done
         if self.calibIndex >= len(self.outputFreqs):
-            self.timer.stop()
             self.stop_tone()
             print("Calibration tones complete.")
             self.calibIndex = 0
@@ -128,7 +123,6 @@ class SenderWidget(QWidget):
             freq = self.outputFreqs[self.calibIndex]
             self.start_tone(freq)
             self.calibIndex += 1
-            self.timer.setInterval(200)
 
     def onEncode(self):
         raw = self.dataInput.text().strip()
@@ -180,22 +174,24 @@ class SenderWidget(QWidget):
         self.stop_tone()
         event.accept()
 
-    def start_tone(self, freq, duration_ms=200):
+    def start_tone(self, freq):
         self.stop_tone()
-
-        duration_s = duration_ms / 1000
-        samples = int(self.sample_rate * duration_s)
-
-        t = np.linspace(0, duration_s, samples, endpoint=False)
-        wave = np.sin(2 * np.pi * freq * t).astype(np.float32)
+        
+        phase = [0.0]  
+        
+        def callback(outdata, frames, time, status):
+            t = (phase[0] + np.arange(frames)) / self.sample_rate
+            outdata[:, 0] = np.sin(2 * np.pi * freq * t).astype(np.float32)
+            phase[0] += frames  
 
         self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=1,
-            dtype='float32'
+            dtype='float32',
+            callback=callback
         )
         self.stream.start()
-        self.stream.write(wave)
+
 
     def stop_tone(self):
         if self.stream is not None:
