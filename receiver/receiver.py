@@ -122,14 +122,13 @@ class ReceiverWidget(QWidget):
             self.freqIndex = 0
             self.calibMeasurements = []
 
-            label = QLabel("Start listening - This need to be pressed at the same time as sender")
-            mainLayout.addWidget(label)
-
-            self.calibBTN = QPushButton("Start")
+            self.calibBTN = QPushButton("Start listening - This need to be pressed at the same time as sender")
             self.calibBTN.clicked.connect(self.startCalibration)
-
+            layout.addWidget(self.calibBTN)
+        self.setLayout(layout)
 
     def startCalibration(self):
+        self.stream.start()
         self.timer.start(200)
 
     def calibrate(self):
@@ -146,23 +145,25 @@ class ReceiverWidget(QWidget):
                 samples.append(powers[self.freqIndex])
                 count -= 1
             self.calibMeasurements.append(sum(samples) / 3)
+            print(self.calibMeasurements[-1])
             self.freqIndex += 1
-            if self.freqIndex >= len(outputFreqs):
+            if self.freqIndex >= len(self.inputFreqs):
                 self.timer.stop()
                 self.finishCalibration()
             else:
                 self.state = "wait"
 
     def finishCalibration(self):
-        for i, freq in enumerate(outputFreqs):
+        for i, freq in enumerate(self.inputFreqs):
             avg = self.calibMeasurements[i]
             self.freqGain[freq] = self.targetAmp / avg
 
         gains_serializable = {str(k): v for k, v in self.freqGain.items()}
         
-        with open("/common/config/calibrationGains.json", "w") as f:
-            json.dump(gains_serializable, f, indent=4)
-        
+        # with open("/common/config/calibrationGains.json", "w") as f:
+        #     json.dump(gains_serializable, f, indent=4)
+
+        print(gains_serializable)
         print("Calibration complete, gains saved.")
 
     def updateGain(self, freq):

@@ -1,27 +1,11 @@
 import os
 import cv2
+import sys
 import scipy
 import datetime
 import numpy as np
 import sounddevice as sd
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
-
-
-class SenderWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-
-        layout = QVBoxLayout()
-        label = QLabel("Sender")
-        layout.addWidget(label)
-
-        self.setLayout(layout)
-    
-import sys
-import numpy as np
-import sounddevice as sd
-
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -43,7 +27,7 @@ class SenderWidget(QWidget):
 
         self.setWindowTitle("Sender")
 
-        self.sample_rate = 48000
+        self.sample_rate = 44100
         self.is_playing = False
         self.stream = None
         self.phase = 0.0
@@ -92,11 +76,7 @@ class SenderWidget(QWidget):
             self.timer.timeout.connect(self.calibrate)
             self.calibIndex = 0
 
-            label = QLabel("Start playing - This need to be pressed at the same time as receiver")
-            mainLayout.addWidget(label)
-
-
-            self.calibBTN = QPushButton("Start")
+            self.calibBTN = QPushButton("Start playing - This need to be pressed at the same time as receiver")
             self.calibBTN.clicked.connect(self.startCalibration)
             mainLayout.addWidget(self.calibBTN)
 
@@ -143,6 +123,7 @@ class SenderWidget(QWidget):
             self.timer.stop()
             self.stop_tone()
             print("Calibration tones complete.")
+            self.calibIndex = 0
         else:
             freq = self.outputFreqs[self.calibIndex]
             self.start_tone(freq)
@@ -222,7 +203,8 @@ class SenderWidget(QWidget):
             self.stream.close()
             self.stream = None
         self.is_playing = False
-        self.symbolBTN.setChecked(False)
+        if self.hammingDebug == 1:
+            self.symbolBTN.setChecked(False)
         
     def encodeHamming(self, data): 
         '''

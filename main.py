@@ -39,8 +39,6 @@ class MainWindow(QWidget):
 
         receiver = ReceiverWidget()
 
-        receiver.startListening()
-
         self.layout.addWidget(receiver)
 
     def showSender(self):
