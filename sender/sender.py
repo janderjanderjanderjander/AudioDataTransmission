@@ -23,7 +23,7 @@ class SenderWidget(QWidget):
 
         #Debugging tools
         self.hammingDebug = 0
-        self.calibration = 1
+        self.calibration = 0
 
         self.setWindowTitle("Sender")
 
@@ -90,20 +90,19 @@ class SenderWidget(QWidget):
             filePath = "common/pics/samplePicBlackNWhiteSmall.png"
             self.image = cv2.imread(filePath)
 
-
             toneInputLabel = QLabel("Tone length (ms)")
             mainLayout.addWidget(toneInputLabel)
-            toneInput = QLineEdit()
+            self.toneInput = QLineEdit()
             mainLayout.addWidget(self.toneInput)
 
             pauseInputLabel = QLabel("Pause length (ms)")
             mainLayout.addWidget(pauseInputLabel)
-            pauseInput = QLineEdit()
+            self.pauseInput = QLineEdit()
             mainLayout.addWidget(self.pauseInput)
 
             preampleInputLabel = QLabel("Preample byte")
             mainLayout.addWidget(preampleInputLabel)
-            preampleInput = QLineEdit()
+            self.preampleInput = QLineEdit()
             mainLayout.addWidget(self.preampleInput)
 
             self.pictureBTN = QPushButton("Play picture")

@@ -1,22 +1,27 @@
 import json
+import cv2
 import numpy as np
 import pyqtgraph as pg
 import sounddevice as sd
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import Qt
 
 class ReceiverWidget(QWidget):
     def __init__(self):
         super().__init__()
 
         # Debugging variables
+        self.byteShowDebug = 0
+        self.graphDebug = 0
         self.gainDebug = 0
-        self.graphDebug = 1
-        self.byteShowDebug = 1
+        self.picGen = 1
         #Calibration
         self.calibration = 0
         self.targetAmp = 10
 
+        #Filtering
         self.sampleRate = 44100
         self.chunkSize = 2048
         self.cutoffLine = 0.5
@@ -26,7 +31,7 @@ class ReceiverWidget(QWidget):
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
 
-        #For goertzel
+        #Goertzel
         if self.calibration == 1:
             self.freqGain = {
                 1000: 1.0,
@@ -50,7 +55,7 @@ class ReceiverWidget(QWidget):
                 gains_serializable = json.load(f)
                 self.freqGain = {int(k): v for k, v in gains_serializable.items()}
 
-        print(self.freqGain)
+        #print(self.freqGain)
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -61,7 +66,6 @@ class ReceiverWidget(QWidget):
         layout = QVBoxLayout()
         label = QLabel("Receiver")
         layout.addWidget(label)
-
 
         # Graphing controls
         if self.graphDebug == 1:
@@ -115,6 +119,7 @@ class ReceiverWidget(QWidget):
             gainContainer.setLayout(gainLayout)
             layout.addWidget(gainContainer)
 
+        # Controls for showing received byte
         if self.byteShowDebug == 1:
             self.setLayout(layout)
             self.messageLabel = QLabel("No bytes yet")
@@ -124,6 +129,7 @@ class ReceiverWidget(QWidget):
             self.timer.start()
             self.stream.start()
 
+        # Calibration of goertzel gains
         if self.calibration == 1:
             # Amplitude calibration
             self.freqIndex = 0
@@ -133,10 +139,77 @@ class ReceiverWidget(QWidget):
             self.calibBTN = QPushButton("Next note")
             self.calibBTN.clicked.connect(self.calibrate)
             layout.addWidget(self.calibBTN)
+
+        if self.picGen == 1:
+
+            self.canvas = QLabel()
+            self.canvas.setFixedSize(500, 500)
+            self.canvas.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            layout.addWidget(self.canvas)
+
+            # Init empty pic
+            self.frame = np.zeros((500, 500, 3), dtype=np.uint8) 
+            self.refreshCanvas()
+            self.x = 0
+            self.y = 0
+
+
+            #DEBUGGING PART; LOSE THIS
+            filePath = "common/pics/samplePicBlackNWhiteSmall.png"
+            self.debugImg = cv2.imread(filePath)  # loads as BGR
+            if self.debugImg is None:
+                print(f"ERROR: Could not load image: {filePath}")
+            self.debugPixelIndex = 0  # flat index into the image
+
+            self.debugTimer = QTimer()
+            self.debugTimer.timeout.connect(self.debugTick)
+            self.debugTimer.start(30)  # 1 second interval 30 FOR NOW, too slow otherwise
+
+
         self.setLayout(layout)
 
-    def calibrate(self): 
+    
+    def setPixel(self, bits24: list[int]):
+        '''
+        Sets a pixel and updates canvas. Argument is a tuple of (b, g, r), because of opencv
+        Call if u have 24 bit received.
+        '''
+        self.frame[self.y, self.x] = bits24
+        self.refreshCanvas()
 
+    def refreshCanvas(self):
+        '''
+        This converts the numpy array to QPixmap so we can have real time show
+        '''
+        rgb = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
+        self.canvasPixmap = QPixmap.fromImage(qimg)
+        self.canvas.setPixmap(self.canvasPixmap)
+
+
+
+    def debugTick(self):
+        """Reads 24 pixels from the debug image and feeds them in."""
+        imgH, imgW = self.debugImg.shape[:2]
+        totalPixels = imgH * imgW
+
+        for i in range(1000): #1000 to see it. Too slow otherwise
+            if self.debugPixelIndex >= totalPixels:
+                self.debugTimer.stop()
+                return
+
+            # Convert flat index to x, y
+            self.x = self.debugPixelIndex % imgW
+            self.y = self.debugPixelIndex // imgW
+
+            bgr = self.debugImg[self.y, self.x].tolist()
+            self.setPixel(bgr)
+
+            self.debugPixelIndex += 1
+
+
+    def calibrate(self): 
         #Measure the amplitude of frequency
         count = 3
         samples = []
