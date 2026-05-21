@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import pyqtgraph as pg
 import sounddevice as sd
@@ -10,10 +11,10 @@ class ReceiverWidget(QWidget):
 
         # Debugging variables
         self.gainDebug = 0
-        self.graphDebug = 0
-        self.byteShowDebug = 0
+        self.graphDebug = 1
+        self.byteShowDebug = 1
         #Calibration
-        self.calibration = 1
+        self.calibration = 0
         self.targetAmp = 10
 
         self.sampleRate = 44100
@@ -26,23 +27,30 @@ class ReceiverWidget(QWidget):
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
 
         #For goertzel
-        self.freqGain = {
-            1000: 2.0,
-            2000: 1.4,
-            3000: 3,
-            4000: 2.0,
-            5000: 1.0,
-            6000: 1.5,
-            7000: 1.0,
-            8000: 1.5,
-            9000: 1.0,
-            10000: 1.0,
-            11000: 2.0,
-            12000: 1.0,
-            13000: 2.0,
-            14000: 1.5,
-            15000: 5.0
-        }
+        if self.calibration == 1:
+            self.freqGain = {
+                1000: 1.0,
+                2000: 1.0,
+                3000: 1.0,
+                4000: 1.0,
+                5000: 1.0,
+                6000: 1.0,
+                7000: 1.0,
+                8000: 1.0,
+                9000: 1.0,
+                10000: 1.0,
+                11000: 1.0,
+                12000: 1.0,
+                13000: 1.0,
+                14000: 1.0,
+                15000: 1.0
+            }
+        else:
+            with open("common/config/calibrationGains.json", "r") as f:
+                gains_serializable = json.load(f)
+                self.freqGain = {int(k): v for k, v in gains_serializable.items()}
+
+        print(self.freqGain)
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -69,7 +77,7 @@ class ReceiverWidget(QWidget):
 
             self.plot1.setYRange(-1, 1)
             self.plot2.setYRange(0, 200)
-            self.plot3.setYRange(0, 3)
+            self.plot3.setYRange(0, 11)
 
             layout.addLayout(plotsLayout)
 
@@ -113,45 +121,34 @@ class ReceiverWidget(QWidget):
             layout.addWidget(self.messageLabel)
             self.timer = QTimer()
             self.timer.timeout.connect(self.update)        
+            self.timer.start()
+            self.stream.start()
 
         if self.calibration == 1:
             # Amplitude calibration
-            self.timer = QTimer()
-            self.timer.timeout.connect(self.calibrate)
-            self.state = "wait"
             self.freqIndex = 0
             self.calibMeasurements = []
+            self.stream.start()
 
-            self.calibBTN = QPushButton("Start listening - This need to be pressed at the same time as sender")
-            self.calibBTN.clicked.connect(self.startCalibration)
+            self.calibBTN = QPushButton("Next note")
+            self.calibBTN.clicked.connect(self.calibrate)
             layout.addWidget(self.calibBTN)
         self.setLayout(layout)
 
-    def startCalibration(self):
-        self.stream.start()
-        self.timer.start(200)
+    def calibrate(self): 
 
-    def calibrate(self): #First run 200 ms after button and so on
-        if self.state == "wait":
-            self.state = "measure"
-            return
-
-        if self.state == "measure":
-            #Measure the amplitude of frequency
-            count = 3
-            samples = []
-            while (count):
-                powers = self.getData(option=2)
-                samples.append(powers[self.freqIndex])
-                count -= 1
-            self.calibMeasurements.append(sum(samples) / 3)
-            print(self.calibMeasurements[-1])
-            self.freqIndex += 1
-            if self.freqIndex >= len(self.inputFreqs):
-                self.timer.stop()
-                self.finishCalibration()
-            else:
-                self.state = "wait"
+        #Measure the amplitude of frequency
+        count = 3
+        samples = []
+        while (count):
+            powers = self.getData(option=2)
+            samples.append(powers[self.freqIndex])
+            count -= 1
+        self.calibMeasurements.append(sum(samples) / 3)
+        print(self.calibMeasurements[-1])
+        self.freqIndex += 1
+        if self.freqIndex >= len(self.inputFreqs):
+            self.finishCalibration()
 
     def finishCalibration(self):
         for i, freq in enumerate(self.inputFreqs):
@@ -160,11 +157,12 @@ class ReceiverWidget(QWidget):
 
         gains_serializable = {str(k): v for k, v in self.freqGain.items()}
         
-        # with open("/common/config/calibrationGains.json", "w") as f:
-        #     json.dump(gains_serializable, f, indent=4)
+        with open("common/config/calibrationGains.json", "w") as f:
+            json.dump(gains_serializable, f, indent=4)
 
         print(gains_serializable)
         print("Calibration complete, gains saved.")
+        self.freqIndex = 0
 
     def updateGain(self, freq):
         try:

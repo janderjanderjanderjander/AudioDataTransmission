@@ -1,6 +1,6 @@
 import sys
-from receiver.receiver import ReceiverWidget
 from sender.sender import SenderWidget
+from receiver.receiver import ReceiverWidget
 
 
 from PyQt6.QtWidgets import (
