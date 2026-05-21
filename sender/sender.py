@@ -117,7 +117,7 @@ class SenderWidget(QWidget):
     def startCalibration(self):
         self.timer.start(100)
 
-    def calibrate(self):
+    def calibrate(self): # First run 100 ms after button, then 200 ms interval
         #check if were done
         if self.calibIndex >= len(self.outputFreqs):
             self.timer.stop()
@@ -129,7 +129,6 @@ class SenderWidget(QWidget):
             self.start_tone(freq)
             self.calibIndex += 1
             self.timer.setInterval(200)
-
 
     def onEncode(self):
         raw = self.dataInput.text().strip()
@@ -143,9 +142,6 @@ class SenderWidget(QWidget):
             raw = self.image
             data = [int(b) for b in raw]
             self.encodedBits = self.encodeHamming(data)
-
-
-
         else:
             self.stop_tone()
 
@@ -184,11 +180,15 @@ class SenderWidget(QWidget):
         self.stop_tone()
         event.accept()
 
-    def start_tone(self, freq):
-        
-        t = np.linspace(0, 1, self.sample_rate, endpoint=False)
+    def start_tone(self, freq, duration_ms=200):
+        self.stop_tone()
+
+        duration_s = duration_ms / 1000
+        samples = int(self.sample_rate * duration_s)
+
+        t = np.linspace(0, duration_s, samples, endpoint=False)
         wave = np.sin(2 * np.pi * freq * t).astype(np.float32)
-        
+
         self.stream = sd.OutputStream(
             samplerate=self.sample_rate,
             channels=1,

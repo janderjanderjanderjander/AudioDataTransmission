@@ -131,7 +131,7 @@ class ReceiverWidget(QWidget):
         self.stream.start()
         self.timer.start(200)
 
-    def calibrate(self):
+    def calibrate(self): #First run 200 ms after button and so on
         if self.state == "wait":
             self.state = "measure"
             return
