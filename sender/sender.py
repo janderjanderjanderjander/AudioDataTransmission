@@ -27,6 +27,13 @@ class SenderWidget(QWidget):
 
         self.setWindowTitle("Sender")
 
+        self.freq_low = 1000
+        self.freq_high = 15000
+        self.freq_n = 17
+
+        self.multiFSK = True
+        self.sendbinary = True
+
         self.sample_rate = 44100
         self.is_playing = False
         self.stream = None
@@ -37,9 +44,13 @@ class SenderWidget(QWidget):
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
         self.encodedBits = None 
-        self.outputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+        self.outputFreqs = np.round(np.linspace(self.freq_low, self.freq_high, self.freq_n))
+        print(self.outputFreqs)
         self.activeFreqs = []
 
+        self.duration = 0.3
+        self.audio = np.array([])
+        
         mainLayout = QVBoxLayout()
         mainLayout.setSpacing(10)
         label = QLabel("Sender")
@@ -72,7 +83,6 @@ class SenderWidget(QWidget):
             mainLayout.addWidget(self.symbolBTN)
 
         elif self.calibration == 1:
-
             self.calibIndex = 0
 
             self.calibBTN = QPushButton("Next note")
@@ -87,23 +97,29 @@ class SenderWidget(QWidget):
             Bits per channel: 8
             Total bits: 6,000,000
             '''
-            filePath = "common/pics/samplePicBlackNWhiteSmall.png"
-            self.image = cv2.imread(filePath)
+            #filePath = "common/pics/samplePicBlackNWhiteSmall.png"
+            filePath = "common/pics/test.bmp"
+            self.image = cv2.imread(filePath, cv2.IMREAD_GRAYSCALE)
+            print(self.image.shape)
 
             toneInputLabel = QLabel("Tone length (ms)")
             mainLayout.addWidget(toneInputLabel)
             self.toneInput = QLineEdit()
             mainLayout.addWidget(self.toneInput)
 
+            self.toneInput.textChanged.connect(self.duration_changed)
+
+            """
             pauseInputLabel = QLabel("Pause length (ms)")
             mainLayout.addWidget(pauseInputLabel)
             self.pauseInput = QLineEdit()
             mainLayout.addWidget(self.pauseInput)
-
+            
             preampleInputLabel = QLabel("Preample byte")
             mainLayout.addWidget(preampleInputLabel)
             self.preampleInput = QLineEdit()
             mainLayout.addWidget(self.preampleInput)
+            """
 
             self.pictureBTN = QPushButton("Play picture")
             self.pictureBTN.setCheckable(True)
@@ -130,17 +146,137 @@ class SenderWidget(QWidget):
         self.encodedBits = self.encodeHamming(data)
         self.encodedLabel.setText("".join(str(b) for b in self.encodedBits))
 
+    def debug(self, input_bits):
+        # Frequencies that have 1
+        activeFreqs = []
+        for i in range(len(input_bits)):
+            if input_bits[i] == 1:
+                activeFreqs.append(self.outputFreqs[i])
+
+        self.activeFreqs = activeFreqs
+        self.phase = 0.0
+        self.stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype='float32',
+            callback=self.generateSignal,
+        )
+        self.stream.start()
+        self.is_playing = True
+
     def togglePicture(self, checked):
         if checked:
-            raw = self.image
-            data = [int(b) for b in raw]
-            self.encodedBits = self.encodeHamming(data)
+            #send_debug = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+            #self.debug(send_debug)
+
+            if len(self.image.shape) > 2:
+                print(f"Saatimine võtab {str(datetime.timedelta(seconds=((self.image.shape[0] * self.image.shape[1] * self.image.shape[2]) * 2 * self.duration)))}")
+            else:
+                print(f"Saatimine võtab {str(datetime.timedelta(seconds=((self.image.shape[0] * self.image.shape[1]) * 2 * self.duration)))}")
+            
+            #print(len(self.image[0]) * len(self.image[1]) * len(self.image[2]) * self.duration)
+
+            t = np.linspace(0, self.duration, int(self.sample_rate * self.duration), endpoint=False)
+            self.audio = np.array([np.sin(2 * np.pi * f * t) for f in self.outputFreqs])
+
+            binary_repr_v = np.vectorize(np.binary_repr)
+            image_bitvector = "".join(binary_repr_v(self.image.flatten(), 8))
+            #image_bitvector = "000000010000"
+            
+            n = 4
+
+            counter = 0
+            output_audio = np.zeros(0)
+            debugstring = ""
+
+            if self.sendbinary:
+                for i in range(0, len(self.image.flatten()), 4):               
+                    pixvector = 0
+                    pixcount = 0
+                    
+                    for pixel in self.image.flatten()[i:i+4]:
+                        if pixel == 0:
+                            pixvector |= (1 << (3 - pixcount))
+                        pixcount += 1
+
+                    #print(f"{pixvector:04b}")
+
+                    bytearr = np.zeros(t.size)
+                    bytearr += self.audio[pixvector]
+                    debugstring += f"{pixvector:04b}"
+
+                    if counter % 2 == 0:
+                        bytearr += self.audio[-1]
+
+                    counter += 1
+
+                    output_audio = np.append(output_audio, bytearr)
+
+                    if (counter % 1000 == 0):
+                        print("Playing chunk!")
+                        sd.play(output_audio, self.sample_rate)
+                        sd.wait()
+                        output_audio = np.zeros(0)
+            else:
+                #3 bytes makes one pixel (3 color channels)
+                for i in range(0, len(image_bitvector), n):
+                    #raw = image_bitvector[i:i+n]
+                    #data = [int(b) for b in raw]
+                    #self.encodedBits = data
+                    #self.encodedBits = self.encodeHamming(data)
+                    #temp = np.append(self.encodedBits, int(counter % 2 == 0))
+                    #print(hex(int("".join(map(str, temp)), 2)), int(counter % 2 == 0))
+                    #print(self.encodedBits, int(counter % 2 == 0))
+
+                    idx = int(image_bitvector[i:i+n], 2)
+                    #print(image_bitvector[i:i+n], idx, int(counter % 2 == 0))
+                    bytearr = np.zeros(t.size)
+                    bytearr += self.audio[idx]
+
+                    """
+                    if (self.multiFSK):
+                        if (idx_arr == []):
+                            for bit in range(0, 16, 4):
+                                idx = int("".join(map(str, self.encodedBits[bit:bit+4])), 2)
+                                #print(idx)
+                                idx_arr.append(idx)
+
+                        #print(idx_arr[0], int(counter % 2 == 0))
+                        
+                    else:
+                        for i in range(0, 15):
+                            if self.encodedBits[i] == 1:
+                                bytearr += self.audio[i]
+                    """
+
+                    if counter % 2 == 0:
+                        print("Binary: ", image_bitvector[i:i+(n*2)])
+                        bytearr += self.audio[-1]
+
+                    counter += 1
+
+                    output_audio = np.append(output_audio, bytearr)
+
+                    if (counter % 1000 == 0):
+                        print("Playing chunk!")
+                        #scipy.io.wavfile.write("temp.wav", self.sample_rate, output_audio)
+                        sd.play(output_audio, self.sample_rate)
+                        sd.wait()
+                        output_audio = np.zeros(0)
+
+            #spacer = 9
+            #print("\n".join(debugstring[i:i+spacer] for i in range(0, len(debugstring), spacer)))
+
+            sd.play(output_audio, self.sample_rate)
+            sd.wait()
+            output_audio = np.zeros(0)
+            
+            print("Image sent!")
         else:
             self.stop_tone()
 
     def toggleSymbol(self, checked):
         if checked:
-
             # Frequencies that have 1
             activeFreqs = []
             for i in range(0, 15):
@@ -159,13 +295,15 @@ class SenderWidget(QWidget):
             self.is_playing = True
         else:
             self.stop_tone()
-
+        
+    def duration_changed(self, text):
+        self.duration = int(text) / 1000
 
     def generateSignal(self, outdata, frames, time, status):
         t = (self.phase + np.arange(frames)) / self.sample_rate
         # Sum a sine wave for each active frequency, then normalise
         signal = sum(np.sin(2 * np.pi * f * t) for f in self.activeFreqs)
-        signal = signal / max(len(self.activeFreqs), 1)   # prevent clipping
+        signal /= np.max(np.abs(signal))   #normalize
         outdata[:, 0] = signal.astype(np.float32)
         self.phase += frames
 
