@@ -17,20 +17,21 @@ class ReceiverWidget(QWidget):
         self.graphDebug = 0
         self.gainDebug = 0
         self.picGen = 1
-        self.count = 0
+        self.calibration = 0
 
         #Calibration
-        self.calibration = 0
+        self.count = 0
         self.targetAmp = 10
 
         #new
         self.byteBuffer = []
+        self.state = 0
 
         #Filtering
         self.sampleRate = 44100
         self.chunkSize = 2048
-        self.cutoffLine = 5
-        self.inputFreqs = np.round(np.linspace(1000, 15000, 17))
+        self.cutoffLine = 10
+        self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
@@ -70,7 +71,7 @@ class ReceiverWidget(QWidget):
 
             self.plot1.setYRange(-1, 1)
             self.plot2.setYRange(0, 200)
-            self.plot3.setYRange(0, 11)
+            self.plot3.setYRange(0, 25)
 
             layout.addLayout(plotsLayout)
 
@@ -171,11 +172,17 @@ class ReceiverWidget(QWidget):
         
         gData = self.getData(option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        #print(onesAndZeros)
+        print(onesAndZeros)
         syncBit = onesAndZeros[-1]
 
-        if syncBit != self.prevSyncBit:
+        if syncBit == 1:
+            self.state = 1
 
+        elif syncBit == 0 and self.state == 1:
+            self.state = 2
+        
+        elif self.state == 2:
+            self.state = 0
             self.value4bit = None
             for indeks, el in enumerate(onesAndZeros):
                 if el == 1:
@@ -193,7 +200,7 @@ class ReceiverWidget(QWidget):
                 #print(self.value4bit)
                 self.byteBuffer.append(f"{self.value4bit:04b}")
                 #print(self.byteBuffer[-1])
-                self.prevSyncBit = syncBit
+                
 
             if len(self.byteBuffer) >= 2:
                 binValue = self.byteBuffer[0] + self.byteBuffer[1]
@@ -386,7 +393,10 @@ class ReceiverWidget(QWidget):
 
         if option == 2:
             windowed = samples * np.hanning(len(samples))
-            powers = [self.goertzel(windowed, f, self.sampleRate) for f in self.inputFreqs]
+            powers = np.array([self.goertzel(windowed, f, self.sampleRate) for f in self.inputFreqs])
+            mean = np.mean(powers)
+            if mean > 0:
+                powers = powers / mean 
 
             return powers
 
