@@ -140,7 +140,6 @@ class SenderWidget(QWidget):
 
     def toggleSymbol(self, checked):
         if checked:
-
             # Frequencies that have 1
             activeFreqs = []
             for i in range(0, 15):

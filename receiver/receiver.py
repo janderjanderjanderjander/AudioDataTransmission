@@ -17,43 +17,32 @@ class ReceiverWidget(QWidget):
         self.graphDebug = 0
         self.gainDebug = 0
         self.picGen = 1
+        self.count = 0
+
         #Calibration
         self.calibration = 0
         self.targetAmp = 10
 
+        #new
+        self.byteBuffer = []
+
         #Filtering
         self.sampleRate = 44100
         self.chunkSize = 2048
-        self.cutoffLine = 0.5
-        self.inputFreqs = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000]
+        self.cutoffLine = 5
+        self.inputFreqs = np.round(np.linspace(1000, 15000, 17))
 
-        #Hamming
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
 
-        #Goertzel
-        if self.calibration == 1:
-            self.freqGain = {
-                1000: 1.0,
-                2000: 1.0,
-                3000: 1.0,
-                4000: 1.0,
-                5000: 1.0,
-                6000: 1.0,
-                7000: 1.0,
-                8000: 1.0,
-                9000: 1.0,
-                10000: 1.0,
-                11000: 1.0,
-                12000: 1.0,
-                13000: 1.0,
-                14000: 1.0,
-                15000: 1.0
-            }
-        else:
-            with open("common/config/calibrationGains.json", "r") as f:
-                gains_serializable = json.load(f)
-                self.freqGain = {int(k): v for k, v in gains_serializable.items()}
+        # #Goertzel
+        # if self.calibration == 1:
+        #     self.freqGain = {freq: 1.0 for freq in self.inputFreqs}
+        # else:
+        #     with open("common/config/calibrationGains.json", "r") as f:
+        #         gains_serializable = json.load(f)
+        #         self.freqGain = {int(round(float(k))): v for k, v in gains_serializable.items()}
+        self.freqGain = {freq: 1.0 for freq in self.inputFreqs}
 
         #print(self.freqGain)
 
@@ -147,47 +136,135 @@ class ReceiverWidget(QWidget):
             self.canvas.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             layout.addWidget(self.canvas)
 
-            # Init empty pic
-            self.frame = np.zeros((500, 500, 3), dtype=np.uint8) 
+            # Pic init
+            self.frame = np.zeros((9, 9), dtype=np.uint8)   
+
             self.refreshCanvas()
             self.x = 0
             self.y = 0
 
+            # Receiving pic
+            self.picBuffer = []
+            self.prevSyncBit = 0
+            self.value4bit = 0
 
-            #DEBUGGING PART; LOSE THIS
-            filePath = "common/pics/samplePicBlackNWhiteSmall.png"
-            self.debugImg = cv2.imread(filePath)  # loads as BGR
-            if self.debugImg is None:
-                print(f"ERROR: Could not load image: {filePath}")
-            self.debugPixelIndex = 0  # flat index into the image
+            # Show byte
+            self.setLayout(layout)
+            self.messageLabel = QLabel("No bytes yet")
+            layout.addWidget(self.messageLabel)
 
-            self.debugTimer = QTimer()
-            self.debugTimer.timeout.connect(self.debugTick)
-            self.debugTimer.start(30)  # 1 second interval 30 FOR NOW, too slow otherwise
+            # Receive pic
+            self.timer = QTimer()
+            self.timer.timeout.connect(self.updatePicBuffer)        
+            self.stream.start()
+            self.timer.start(100)
+
+            # If buffer has the 3 channels worth of info. so 24 bits, then update pixel using def setPixel(self, bits24: list[int]):
+            # if len(self.picBuffer) >= 24:
+            #     self.setPixel(self.picBuffer[:24])
+            #     self.picBuffer = self.picBuffer[24:]
 
 
         self.setLayout(layout)
 
-    
-    def setPixel(self, bits24: list[int]):
+    def updatePicBuffer(self):
+        
+        gData = self.getData(option=2)
+        onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
+        #print(onesAndZeros)
+        syncBit = onesAndZeros[-1]
+
+        if syncBit != self.prevSyncBit:
+
+            self.value4bit = None
+            for indeks, el in enumerate(onesAndZeros):
+                if el == 1:
+
+                    if indeks == len(onesAndZeros) - 1:
+                        pass
+                    else:
+                        if self.value4bit is None:
+                            self.value4bit = indeks
+                        else:
+                            self.value4bit = None
+            
+            if self.value4bit != None:
+                #print(onesAndZeros)
+                #print(self.value4bit)
+                self.byteBuffer.append(f"{self.value4bit:04b}")
+                #print(self.byteBuffer[-1])
+                self.prevSyncBit = syncBit
+
+            if len(self.byteBuffer) >= 2:
+                binValue = self.byteBuffer[0] + self.byteBuffer[1]
+                print(binValue)
+
+                for bitChar in binValue:
+                    bit = int(bitChar)
+
+                    self.setPixel(bit)
+
+                    # Move to next pixel
+                    self.x += 1
+
+                    if self.x >= 9:
+                        self.x = 0
+                        self.y += 1
+
+                    # Stop if 9x9 image is full
+                    if self.y >= 9:
+                        self.y = 8
+                        self.x = 8
+                        self.timer.stop()
+                        break
+
+                self.byteBuffer = []
+
+        # if self.prevSyncBit != syncBit:
+        #     self.picBuffer.extend(hammingFiltered)
+        #     value = int(''.join(str(int(x)) for x in hammingFiltered), 2)
+        #     print(f'Got {self.count}: 0x{value:04X}')
+        #     self.count += 1
+        #     self.prevSyncBit = syncBit
+
+    def setPixel(self, bit: int):
         '''
-        Sets a pixel and updates canvas. Argument is a tuple of (b, g, r), because of opencv
-        Call if u have 24 bit received.
+        Sets one 1-bit pixel and updates canvas.
+        bit should be:
+        0 = black
+        1 = white
         '''
-        self.frame[self.y, self.x] = bits24
+        self.frame[self.y, self.x] = 1 if bit else 0
         self.refreshCanvas()
 
     def refreshCanvas(self):
         '''
-        This converts the numpy array to QPixmap so we can have real time show
+        Converts the 9x9 1-bit-style numpy array to QPixmap.
+        Internally frame stores 0 or 1.
+        For display, it is converted to 0 or 255.
         '''
-        rgb = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
+        display = (self.frame * 255).astype(np.uint8)
+
+        h, w = display.shape
+        qimg = QImage(
+            display.data,
+            w,
+            h,
+            w,
+            QImage.Format.Format_Grayscale8
+        )
+
         self.canvasPixmap = QPixmap.fromImage(qimg)
-        self.canvas.setPixmap(self.canvasPixmap)
 
-
+        # Optional: scale up so the 9x9 image is visible
+        self.canvas.setPixmap(
+            self.canvasPixmap.scaled(
+                500,
+                500,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+        )
 
     def debugTick(self):
         """Reads 24 pixels from the debug image and feeds them in."""
@@ -259,8 +336,9 @@ class ReceiverWidget(QWidget):
         If data passes filter, set message to it.
         Using hamming(15,11) noise filtering. Includes 4 parity bits which can fix 1 bit errors
         '''
-
         hamming15 = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
+        self.setMessage(str(hamming15))
+        return 0
 
         # See if any errors
         syndrome = 0
@@ -275,28 +353,30 @@ class ReceiverWidget(QWidget):
             if result != 0: #if problems, add to syndrome
                 syndrome += p
 
-        # Unfixable
-        if syndrome > 15:
-            print("SYNDROME OB")
-
-        # Single error fix
-        elif syndrome != 0:
-            corrected = hamming15
-            corrected[syndrome - 1] ^= 1
-            self.setMessage(str(corrected))
-
-        # All good
         else:
-            self.setMessage(str(hamming15))
+            # Unfixable
+            if syndrome > 15:
+                print("SYNDROME OB")
+
+            # Single error fix
+            elif syndrome != 0:
+                corrected = hamming15
+                corrected[syndrome - 1] ^= 1
+                self.setMessage(str(corrected))
+                return corrected
+
+            # All good
+            else:
+                self.setMessage(str(hamming15))
+                return hamming15
 
 
     def getData(self, option=0):
         samples, overflowed = self.stream.read(self.chunkSize)
+        samples = samples.flatten()
 
         if overflowed:
             print("ERROR: Overflow")
-
-        samples = samples.flatten()
 
         if option == 1:
             windowed = samples * np.hanning(len(samples))
@@ -307,6 +387,7 @@ class ReceiverWidget(QWidget):
         if option == 2:
             windowed = samples * np.hanning(len(samples))
             powers = [self.goertzel(windowed, f, self.sampleRate) for f in self.inputFreqs]
+
             return powers
 
         return samples.flatten()
