@@ -33,6 +33,7 @@ class SenderWidget(QWidget):
 
         self.multiFSK = True
         self.sendbinary = True
+        self.debugging = False
 
         self.sample_rate = 44100
         self.is_playing = False
@@ -44,11 +45,12 @@ class SenderWidget(QWidget):
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
         self.encodedBits = None 
-        self.outputFreqs = np.round(np.linspace(self.freq_low, self.freq_high, self.freq_n))
+        self.outputFreqs = np.round(np.linspace(1000, 15000, 17))
+        #self.outputFreqs = np.round(np.logspace(np.log10(2000), np.log10(4000), self.freq_n))
         print(self.outputFreqs)
         self.activeFreqs = []
 
-        self.duration = 0.3
+        self.duration = 0.2
         self.audio = np.array([])
         
         mainLayout = QVBoxLayout()
@@ -98,7 +100,7 @@ class SenderWidget(QWidget):
             Total bits: 6,000,000
             '''
             #filePath = "common/pics/samplePicBlackNWhiteSmall.png"
-            filePath = "common/pics/test.bmp"
+            filePath = "common/pics/test3.bmp"
             self.image = cv2.imread(filePath, cv2.IMREAD_GRAYSCALE)
             print(self.image.shape)
 
@@ -166,13 +168,15 @@ class SenderWidget(QWidget):
 
     def togglePicture(self, checked):
         if checked:
-            #send_debug = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
-            #self.debug(send_debug)
+            if self.debugging:
+                send_debug = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+                self.debug(send_debug)
+                return
 
             if len(self.image.shape) > 2:
                 print(f"Saatimine võtab {str(datetime.timedelta(seconds=((self.image.shape[0] * self.image.shape[1] * self.image.shape[2]) * 2 * self.duration)))}")
             else:
-                print(f"Saatimine võtab {str(datetime.timedelta(seconds=((self.image.shape[0] * self.image.shape[1]) * 2 * self.duration)))}")
+                print(f"Saatimine võtab {str(datetime.timedelta(seconds=((self.image.shape[0] * self.image.shape[1]) * 4 * self.duration)))}")
             
             #print(len(self.image[0]) * len(self.image[1]) * len(self.image[2]) * self.duration)
 
@@ -205,14 +209,18 @@ class SenderWidget(QWidget):
                     bytearr += self.audio[pixvector]
                     debugstring += f"{pixvector:04b}"
 
-                    if counter % 2 == 0:
-                        bytearr += self.audio[-1]
+                    #if counter % 2 == 0:
+                    #    bytearr += self.audio[-1]
 
                     counter += 1
 
+                    if counter == 1:
+                        output_audio = np.append(output_audio, [self.audio[-1], self.audio[-1], self.audio[-1], self.audio[-1]])
+                    else:
+                        output_audio = np.append(output_audio, self.audio[-1][len(self.audio[-1])//2:])
                     output_audio = np.append(output_audio, bytearr)
 
-                    if (counter % 1000 == 0):
+                    if (counter % 500 == 0):
                         print("Playing chunk!")
                         sd.play(output_audio, self.sample_rate)
                         sd.wait()
@@ -257,15 +265,15 @@ class SenderWidget(QWidget):
 
                     output_audio = np.append(output_audio, bytearr)
 
-                    if (counter % 1000 == 0):
+                    if (counter % 500 == 0):
                         print("Playing chunk!")
                         #scipy.io.wavfile.write("temp.wav", self.sample_rate, output_audio)
                         sd.play(output_audio, self.sample_rate)
                         sd.wait()
                         output_audio = np.zeros(0)
 
-            #spacer = 9
-            #print("\n".join(debugstring[i:i+spacer] for i in range(0, len(debugstring), spacer)))
+            spacer = 8
+            print("\n".join(debugstring[i:i+spacer] for i in range(0, len(debugstring), spacer)))
 
             sd.play(output_audio, self.sample_rate)
             sd.wait()
@@ -297,7 +305,10 @@ class SenderWidget(QWidget):
             self.stop_tone()
         
     def duration_changed(self, text):
-        self.duration = int(text) / 1000
+        if text != "":
+            self.duration = int(text) / 1000
+        else:
+            self.duration = 0.2
 
     def generateSignal(self, outdata, frames, time, status):
         t = (self.phase + np.arange(frames)) / self.sample_rate
