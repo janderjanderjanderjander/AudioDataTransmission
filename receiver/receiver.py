@@ -30,7 +30,7 @@ class ReceiverWidget(QWidget):
         #Filtering
         self.sampleRate = 44100
         self.chunkSize = 2048
-        self.cutoffLine = 10
+        self.cutoffLine = 5
         self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
@@ -172,16 +172,16 @@ class ReceiverWidget(QWidget):
         
         gData = self.getData(option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        print(onesAndZeros)
+        #print(onesAndZeros)
         syncBit = onesAndZeros[-1]
 
         if syncBit == 1:
             self.state = 1
 
-        elif syncBit == 0 and self.state == 1:
+        if syncBit == 0 and self.state == 1:
             self.state = 2
         
-        elif self.state == 2:
+        if self.state == 2:
             self.state = 0
             self.value4bit = None
             for indeks, el in enumerate(onesAndZeros):
@@ -199,12 +199,12 @@ class ReceiverWidget(QWidget):
                 #print(onesAndZeros)
                 #print(self.value4bit)
                 self.byteBuffer.append(f"{self.value4bit:04b}")
-                #print(self.byteBuffer[-1])
+                print(self.byteBuffer[-1])
                 
 
             if len(self.byteBuffer) >= 2:
                 binValue = self.byteBuffer[0] + self.byteBuffer[1]
-                print(binValue)
+                #print(binValue)
 
                 for bitChar in binValue:
                     bit = int(bitChar)
