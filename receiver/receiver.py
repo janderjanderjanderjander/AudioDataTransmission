@@ -26,11 +26,13 @@ class ReceiverWidget(QWidget):
         #new
         self.byteBuffer = []
         self.state = 0
+        self.sizeX = 60
+        self.sizeY = 60
 
         #Filtering
         self.sampleRate = 44100
-        self.chunkSize = 2048
-        self.cutoffLine = 5
+        self.chunkSize = 1024
+        self.cutoffLine = 10
         self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
@@ -138,7 +140,7 @@ class ReceiverWidget(QWidget):
             layout.addWidget(self.canvas)
 
             # Pic init
-            self.frame = np.zeros((9, 9), dtype=np.uint8)   
+            self.frame = np.zeros((self.sizeY, self.sizeX), dtype=np.uint8)   
 
             self.refreshCanvas()
             self.x = 0
@@ -158,7 +160,7 @@ class ReceiverWidget(QWidget):
             self.timer = QTimer()
             self.timer.timeout.connect(self.updatePicBuffer)        
             self.stream.start()
-            self.timer.start(100)
+            self.timer.start()
 
             # If buffer has the 3 channels worth of info. so 24 bits, then update pixel using def setPixel(self, bits24: list[int]):
             # if len(self.picBuffer) >= 24:
@@ -172,18 +174,20 @@ class ReceiverWidget(QWidget):
         
         gData = self.getData(option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        #print(onesAndZeros)
+        print(onesAndZeros)
         syncBit = onesAndZeros[-1]
+        #print(syncBit)
 
         if syncBit == 1:
             self.state = 1
 
         if syncBit == 0 and self.state == 1:
             self.state = 2
-        
-        if self.state == 2:
-            self.state = 0
+            if self.value4bit is None:
+                self.byteBuffer.append(f"0000")
             self.value4bit = None
+        
+        if self.state == 2 and self.value4bit is None:
             for indeks, el in enumerate(onesAndZeros):
                 if el == 1:
 
@@ -200,6 +204,7 @@ class ReceiverWidget(QWidget):
                 #print(self.value4bit)
                 self.byteBuffer.append(f"{self.value4bit:04b}")
                 print(self.byteBuffer[-1])
+                self.state = 0
                 
 
             if len(self.byteBuffer) >= 2:
@@ -214,12 +219,12 @@ class ReceiverWidget(QWidget):
                     # Move to next pixel
                     self.x += 1
 
-                    if self.x >= 9:
+                    if self.x >= self.sizeX:
                         self.x = 0
                         self.y += 1
 
                     # Stop if 9x9 image is full
-                    if self.y >= 9:
+                    if self.y >= self.sizeY:
                         self.y = 8
                         self.x = 8
                         self.timer.stop()

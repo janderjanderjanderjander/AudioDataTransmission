@@ -41,7 +41,7 @@ class MainWindow(QWidget):
 
         self.layout.addWidget(receiver)
 
-    def showSender(self): # 0 0 1 1 0 8 8 4 4 0 0 
+    def showSender(self): # 0 0 1 1 0
         self.clearLayout()
 
         sender = SenderWidget()
