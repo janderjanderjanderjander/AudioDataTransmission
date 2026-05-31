@@ -33,7 +33,7 @@ class ReceiverWidget(QWidget):
         #Filtering
         self.sampleRate = 44100
         self.chunkSize = 1024
-        self.cutoffLine = 10
+        self.cutoffLine = 5
         self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
@@ -166,23 +166,23 @@ class ReceiverWidget(QWidget):
         
         gData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        print(onesAndZeros)
+        # print(onesAndZeros) #DEBUG GOOD PRINT
         syncBit = onesAndZeros[-1]
         #print(syncBit)
 
-        if syncBit == 1:
+        if syncBit == 1: # Incoming transmittion
             self.state = 1
 
-        if syncBit == 0 and self.state == 1:
+        if syncBit == 0 and self.state == 1: # Sync is over, time to catch
             self.state = 2
-            if self.value4bit is None:
+            if self.value4bit is None: # If this is None, means I didn't save any info. Insert 0000 to fix shift
                 self.byteBuffer.append(f"0000")
             self.value4bit = None
         
-        if self.state == 2 and self.value4bit is None:
-            for indeks, el in enumerate(onesAndZeros):
-                if el == 1:
+        if self.state == 2 and self.value4bit is None: # Process
 
+            for indeks, el in enumerate(onesAndZeros): # Every bit
+                if el == 1:
                     if indeks == len(onesAndZeros) - 1:
                         pass
                     else:
@@ -195,17 +195,21 @@ class ReceiverWidget(QWidget):
                 #print(onesAndZeros)
                 #print(self.value4bit)
                 self.byteBuffer.append(f"{self.value4bit:04b}")
-                print(self.byteBuffer[-1])
+                #print(self.byteBuffer[-1])
                 self.state = 0
                 
 
             if len(self.byteBuffer) >= 2:
                 binValue = self.byteBuffer[0] + self.byteBuffer[1]
-                #print(binValue)
+                binList = [int(b) for b in binValue] #16 bits
+                binList = binList[:15] #15 bits
+                
+                decoded = decodeHamming(binList, self.parityPositions, self.cutoffLine) #fixed result
+                dataBits = [decoded[i-1] for i in range(1, 16) if i not in self.parityPositions] #11 bit
+                print(binValue)
+                print(dataBits)
 
-                for bitChar in binValue:
-                    bit = int(bitChar)
-
+                for bit in dataBits:
                     self.setPixel(bit)
 
                     # Move to next pixel
@@ -223,13 +227,6 @@ class ReceiverWidget(QWidget):
                         break
 
                 self.byteBuffer = []
-
-        # if self.prevSyncBit != syncBit:
-        #     self.picBuffer.extend(hammingFiltered)
-        #     value = int(''.join(str(int(x)) for x in hammingFiltered), 2)
-        #     print(f'Got {self.count}: 0x{value:04X}')
-        #     self.count += 1
-        #     self.prevSyncBit = syncBit
 
     def setPixel(self, bit: int):
         '''

@@ -1,21 +1,20 @@
 
 
-def decodeHamming(gData, parityPositions, cutOffLine):
+def decodeHamming(normalized, parityPositions, cutOffLine):
     '''
     Takes data as input
     Applies single error fix 
     If data passes filter, set message to it.
     Using hamming(15,11) noise filtering. Includes 4 parity bits which can fix 1 bit errors
     '''
-    hamming15 = [0 if x < cutOffLine else 1 for x in gData] # Normalize to 0 and 1
-    return 0
+    # hamming15 = [0 if x < cutOffLine else 1 for x in gData] # Normalize to 0 and 1
     # See if any errors
     syndrome = 0
     for p in sorted(parityPositions): # {1, 2, 4, 8} 
         covered = []
         for pos in range(1, 16):      # pos = 1, 2, 3, ... 15
             if pos & p:                # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
-                covered.append(hamming15[pos - 1])  # grab the bit value at that position
+                covered.append(normalized[pos - 1])  # grab the bit value at that position
         result = 0
         for bit in covered: # or everything to see if any problems.
             result = result ^ bit
@@ -29,13 +28,13 @@ def decodeHamming(gData, parityPositions, cutOffLine):
 
         # Single error fix
         elif syndrome != 0:
-            corrected = hamming15
+            corrected = normalized
             corrected[syndrome - 1] ^= 1
             return corrected
 
         # All good
         else:
-            return hamming15
+            return normalized
 
 def encodeHamming(data, dataPositions, parityPositions): 
     '''

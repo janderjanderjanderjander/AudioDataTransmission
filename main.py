@@ -1,4 +1,5 @@
 import sys
+from PyQt6.QtCore import Qt
 from sender.sender import SenderWidget
 from receiver.receiver import ReceiverWidget
 
@@ -48,6 +49,9 @@ class MainWindow(QWidget):
         
         self.layout.addWidget(sender)
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Q:
+            self.close()
 
 app = QApplication(sys.argv)
 
