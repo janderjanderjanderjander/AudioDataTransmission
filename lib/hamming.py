@@ -1,6 +1,6 @@
 
 
-def decodeHamming(normalized, parityPositions, cutOffLine):
+def decodeHamming(normalized, parityPositions):
     '''
     Takes data as input
     Applies single error fix 

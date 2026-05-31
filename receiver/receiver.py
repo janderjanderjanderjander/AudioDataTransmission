@@ -23,22 +23,27 @@ class ReceiverWidget(QWidget):
         #Calibration
         self.count = 0
         self.targetAmp = 10
+        self.maxRatio = 0
 
         #new
         self.byteBuffer = []
         self.state = 0
-        self.sizeX = 60
-        self.sizeY = 60
+        self.sizeX = 20
+        self.sizeY = 20
+        self.prevOnesAndZeros = []
 
         #Filtering
         self.sampleRate = 44100
-        self.chunkSize = 1024
-        self.cutoffLine = 7
+        self.chunkSize = 300
+        #self.cutoffLine = 
+        self.prevOnesAndZeros = None
+        self.sameCount = 0
         self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
-
+        # if ratio > self.maxRatio:
+        #     self.maxRatio = ratio
         self.freqGain = {freq: 1.0 for freq in self.inputFreqs}
 
         self.stream = sd.InputStream(
@@ -141,7 +146,7 @@ class ReceiverWidget(QWidget):
             # Receiving pic
             self.picBuffer = []
             self.prevSyncBit = 0
-            self.value4bit = 0
+            self.gotValue = True
 
             # Show byte
             self.setLayout(layout)
@@ -152,7 +157,7 @@ class ReceiverWidget(QWidget):
             self.timer = QTimer()
             self.timer.timeout.connect(self.updatePicBuffer)        
             self.stream.start()
-            self.timer.start()
+            self.timer.start(10)
 
             # If buffer has the 3 channels worth of info. so 24 bits, then update pixel using def setPixel(self, bits24: list[int]):
             # if len(self.picBuffer) >= 24:
@@ -165,50 +170,76 @@ class ReceiverWidget(QWidget):
     def updatePicBuffer(self):
         
         gData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
-        onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        print(''.join(str(b) for b in onesAndZeros)) #DEBUG GOOD PRINT
+        #print(f'Gdata : {gData}')
+        max_val = max(gData)
+        #print(f' Maximum: {max_val}')
+        max_index = int(np.argmax(gData))
+        others = [x for i, x in enumerate(gData) if i != max_index]
+        avg_noise = sum(others) / len(others)
+
+        ratio = max_val / avg_noise
+        # if ratio > self.maxRatio:
+        #     self.maxRatio = ratio
+        #print(f'Max Ratio - {self.maxRatio}')
+        onesAndZeros = [1 if x == max_val else 0 for x in gData]
+        #print(''.join(str(b) for b in onesAndZeros)) #DEBUG GOOD PRINT
+        #print(self.gotValue)
+        #print(f'Ratio - {ratio}')
+
+        if ratio < 25:
+            return
+
+        # if onesAndZeros != self.prevOnesAndZeros:
+        #     self.prevOnesAndZeros = onesAndZeros
+        #     self.sameCount = 1
+        #     return
+
+        # self.sameCount += 1
+
+        # if self.sameCount < 3:
+        #     return
+
+        #print(''.join(str(b) for b in onesAndZeros)) #DEBUG GOOD PRINT
+
         syncBit = onesAndZeros[-1]
-        #print(syncBit)
 
         if syncBit == 1: # Incoming transmittion
             self.state = 1
 
         if syncBit == 0 and self.state == 1: # Sync is over, time to catch
             self.state = 2
-            if self.value4bit is None: # If this is None, means I didn't save any info. Insert 0000 to fix shift
+            if not(self.gotValue): # If this is None, means I didn't save any info. Insert 0000 to fix shift
                 self.byteBuffer.append(f"0000")
-            self.value4bit = None
+                print(f'Nothing : {self.byteBuffer[-1]}')
+            self.gotValue = False
         
-        if self.state == 2 and self.value4bit is None: # Process
+        if self.state == 2: # Process
 
             for indeks, el in enumerate(onesAndZeros): # Every bit
                 if el == 1:
-                    if indeks == len(onesAndZeros) - 1:
-                        pass
-                    else:
-                        if self.value4bit is None:
-                            self.value4bit = indeks
-                        else:
-                            self.value4bit = None
-            
-            if self.value4bit != None:
-                #print(onesAndZeros)
-                #print(self.value4bit)
-                self.byteBuffer.append(f"{self.value4bit:04b}")
-                print(self.byteBuffer[-1])
-                self.state = 0
+                    if indeks != len(onesAndZeros) - 1:
+                        self.gotValue = True
+                        self.byteBuffer.append(f"{indeks:04b}")
+                        #print(self.byteBuffer[-1])
+                        self.state = 0
                 
 
             if len(self.byteBuffer) >= 4:
                 binValue = self.byteBuffer[0] + self.byteBuffer[1] + self.byteBuffer[2] + self.byteBuffer[3]
+                #print(f' H: {binValue}')
                 binList = [int(b) for b in binValue] #16 bits
-                binList = binList[:15] #15 bits
+                #binList = binList[:15] #15 bits
                 
-                decoded = decodeHamming(binList, self.parityPositions, self.cutoffLine) #fixed result
-                dataBits = [decoded[i-1] for i in range(1, 16) if i not in self.parityPositions] #11 bit
+                #decoded = decodeHamming(binList, self.parityPositions) #fixed result
+                decoded = binList
+                #dataBits = [decoded[i-1] for i in range(1, 16) if i not in self.parityPositions] #11 bit
+                dataBits = decoded
+                # print(f' D: {dataBits}')
+                # print("")
+
                 #print(binValue)
                 #print(dataBits)
-                x = input()
+                #x = input()
 
                 for bit in dataBits:
                     self.setPixel(bit)
@@ -224,6 +255,7 @@ class ReceiverWidget(QWidget):
                     if self.y >= self.sizeY:
                         self.y = 8
                         self.x = 8
+                        print("DONE")
                         self.timer.stop()
                         break
 
