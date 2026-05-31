@@ -1,12 +1,13 @@
-import json
 import cv2
+import json
 import numpy as np
 import pyqtgraph as pg
 import sounddevice as sd
-from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
-from PyQt6.QtCore import QTimer
+from lib.audio import getData
+from PyQt6.QtCore import QTimer, Qt
+from lib.hamming import decodeHamming
 from PyQt6.QtGui import QImage, QPixmap
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 
 class ReceiverWidget(QWidget):
     def __init__(self):
@@ -38,16 +39,7 @@ class ReceiverWidget(QWidget):
         self.parityPositions = {1, 2, 4, 8} 
         self.dataPositions = [p for p in range(1, 16) if p not in self.parityPositions]
 
-        # #Goertzel
-        # if self.calibration == 1:
-        #     self.freqGain = {freq: 1.0 for freq in self.inputFreqs}
-        # else:
-        #     with open("common/config/calibrationGains.json", "r") as f:
-        #         gains_serializable = json.load(f)
-        #         self.freqGain = {int(round(float(k))): v for k, v in gains_serializable.items()}
         self.freqGain = {freq: 1.0 for freq in self.inputFreqs}
-
-        #print(self.freqGain)
 
         self.stream = sd.InputStream(
             samplerate=self.sampleRate,
@@ -172,7 +164,7 @@ class ReceiverWidget(QWidget):
 
     def updatePicBuffer(self):
         
-        gData = self.getData(option=2)
+        gData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
         print(onesAndZeros)
         syncBit = onesAndZeros[-1]
@@ -303,7 +295,7 @@ class ReceiverWidget(QWidget):
         count = 3
         samples = []
         while (count):
-            powers = self.getData(option=2)
+            powers = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
             samples.append(powers[self.freqIndex])
             count -= 1
         self.calibMeasurements.append(sum(samples) / 3)
@@ -341,105 +333,16 @@ class ReceiverWidget(QWidget):
         self.stream.start()
         self.timer.start(30)
 
-    def updateByte(self, gData):
-        '''
-        Takes data as input
-        Applies single error fix 
-        If data passes filter, set message to it.
-        Using hamming(15,11) noise filtering. Includes 4 parity bits which can fix 1 bit errors
-        '''
-        hamming15 = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        self.setMessage(str(hamming15))
-        return 0
-
-        # See if any errors
-        syndrome = 0
-        for p in sorted(self.parityPositions): # {1, 2, 4, 8} 
-            covered = []
-            for pos in range(1, 16):      # pos = 1, 2, 3, ... 15
-                if pos & p:                # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
-                    covered.append(hamming15[pos - 1])  # grab the bit value at that position
-            result = 0
-            for bit in covered: # or everything to see if any problems.
-                result = result ^ bit
-            if result != 0: #if problems, add to syndrome
-                syndrome += p
-
-        else:
-            # Unfixable
-            if syndrome > 15:
-                print("SYNDROME OB")
-
-            # Single error fix
-            elif syndrome != 0:
-                corrected = hamming15
-                corrected[syndrome - 1] ^= 1
-                self.setMessage(str(corrected))
-                return corrected
-
-            # All good
-            else:
-                self.setMessage(str(hamming15))
-                return hamming15
-
-
-    def getData(self, option=0):
-        samples, overflowed = self.stream.read(self.chunkSize)
-        samples = samples.flatten()
-
-        if overflowed:
-            print("ERROR: Overflow")
-
-        if option == 1:
-            windowed = samples * np.hanning(len(samples))
-            freqDom = np.fft.rfft(windowed)
-            magnitudes = np.abs(freqDom) #magnitudes
-            return magnitudes
-
-        if option == 2:
-            windowed = samples * np.hanning(len(samples))
-            powers = np.array([self.goertzel(windowed, f, self.sampleRate) for f in self.inputFreqs])
-            mean = np.mean(powers)
-            if mean > 0:
-                powers = powers / mean 
-
-            return powers
-
-        return samples.flatten()
-
     def update(self):
-        data = self.getData()
-        fData = self.getData(option=1)
-        gData = self.getData(option=2)
+        data = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs)
+        fData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=1)
+        gData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
 
         if self.graphDebug == 1:
             self.dataLine.setData(data)
             self.dataLine2.setData(fData)
             self.dataLine3.setData(gData)
 
-        self.updateByte(gData)
 
 
-    # https://every-algorithm.github.io/2025/06/25/goertzel_algorithm.html
-    def goertzel(self, samples, target_freq, sample_rate):
-        """
-        Compute the magnitude of the frequency component at target_freq
-        in the given samples using the Goertzel algorithm.
-        """
-        N = len(samples)
-        k = int(0.5 + (N * target_freq / sample_rate))
-        omega = 2.0 * np.pi * k / N
-        coeff = 2.0 * np.cos(omega)
-        s_prev = 0.0
-        s_prev2 = 0.0
-        for sample in samples:
-            s = sample + coeff * s_prev - s_prev2
-            s_prev2 = s_prev
-            s_prev = s
-        power = s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
-        magnitude = np.sqrt(power)
-
-        adjustedMagnitude = magnitude * self.freqGain.get(target_freq, 1.0)
-
-        return adjustedMagnitude
 

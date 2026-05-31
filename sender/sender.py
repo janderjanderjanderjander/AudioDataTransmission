@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
 )
+from lib.hamming import encodeHamming
 
 
 class SenderWidget(QWidget):
@@ -145,7 +146,7 @@ class SenderWidget(QWidget):
         raw = self.dataInput.text().strip()
  
         data = [int(b) for b in raw]
-        self.encodedBits = self.encodeHamming(data)
+        self.encodedBits = encodeHamming(data, self.dataPositions, self.parityPositions)
         self.encodedLabel.setText("".join(str(b) for b in self.encodedBits))
 
     def debug(self, input_bits):
@@ -350,26 +351,6 @@ class SenderWidget(QWidget):
         if self.hammingDebug == 1:
             self.symbolBTN.setChecked(False)
         
-    def encodeHamming(self, data): 
-        '''
-        Turn 11 data bits into 15 bit hamming code.
-        Includes 4 parity bits capable of repairing 1 error.
-        '''
-        product = [0] * 15
-        for i, pos in enumerate(self.dataPositions): # Sets data bits into correct positions
-            product[pos - 1] = data[i]
 
-        for p in sorted(self.parityPositions):  # Go through each of the parity bit positions
-            covered = []
-            for pos in range(1, 16):        # pos = 1, 2, 3, ... 15
-                if pos != p:                # skip the parity bit itself
-                    if pos & p:             # anding check if the number is covered by the parity bit. 0 0 0 0 each digit has a master
-                        covered.append(product[pos - 1])
-            result = 0
-            for bit in covered:
-                result = result ^ bit       # XOR everything together
-            product[p - 1] = result        # set the parity bit to the result
-
-        return product
 
 
