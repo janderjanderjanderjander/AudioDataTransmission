@@ -6,7 +6,8 @@ import datetime
 import numpy as np
 import sounddevice as sd
 import threading
-from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QWidget,
@@ -15,6 +16,8 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QHBoxLayout,
+    QSpacerItem,
+    QSizePolicy
 )
 from lib.hamming import encodeHamming
 
@@ -33,9 +36,10 @@ class SenderWidget(QWidget):
         self.freq_high = 15000
         self.freq_n = 17
 
-        self.multiFSK = True
+        self.inverted = True
         self.sendbinary = True
         self.debugging = False
+        self.hamming = False
         self.kill_send = True
 
         self.sample_rate = 44100
@@ -93,28 +97,68 @@ class SenderWidget(QWidget):
             self.calibBTNU = QPushButton("Next note")
             self.calibBTNU.clicked.connect(lambda: self.calibrate(True))
             mainLayout.addWidget(self.calibBTNU)
-            self.calibBTND = QPushButton("Previous note")
+            self.calibBTND = QPushButton("Prev note")
             self.calibBTND.clicked.connect(lambda: self.calibrate(False))
             mainLayout.addWidget(self.calibBTND)
 
 
         else:
-            #filePath = "common/pics/samplePicBlackNWhiteSmall.png"
-            filePath = "common/pics/test.bmp"
+            filePath = "common/pics/test4.bmp"
+            senderlayout = QVBoxLayout()
+
+            imglayout = QHBoxLayout()
+            
+            self.image_frame = QLabel()
+            self.image_frame.setFixedSize(300, 300)
+            self.image_frame.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+            imglayout.addWidget(self.image_frame)
+
+            img2layout = QVBoxLayout()
+            fileInputLabel = QLabel("Filepath: ")
+            img2layout.addWidget(fileInputLabel)
+            self.fileInput = QLineEdit()
+            self.fileInput.setText(filePath)
+            img2layout.addWidget(self.fileInput)
+
+            self.changepicBTN = QPushButton("Change picture")
+            self.changepicBTN.clicked.connect(self.picture_changed)
+            img2layout.addWidget(self.changepicBTN)
+            
+            imglayout.addLayout(img2layout)
+            senderlayout.addLayout(imglayout)
+
             self.image = cv2.imread(filePath, cv2.IMREAD_GRAYSCALE)
             print(self.image.shape)
 
-            toneInputLabel = QLabel("Tone length (ms)")
-            mainLayout.addWidget(toneInputLabel)
-            self.toneInput = QLineEdit()
-            mainLayout.addWidget(self.toneInput)
+            qimg = QImage(self.image.data, self.image.shape[1], self.image.shape[0], QImage.Format.Format_Grayscale8)
+            self.image_frame.setPixmap(QPixmap.fromImage(qimg))
 
+            self.canvasPixmap = QPixmap.fromImage(qimg)
+            
+            self.image_frame.setPixmap(
+                self.canvasPixmap.scaled(
+                    300,
+                    300,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.FastTransformation
+                )
+            )
+
+            tonelayout = QHBoxLayout()
+            toneInputLabel = QLabel("Tone length (ms)")
+            tonelayout.addWidget(toneInputLabel)
+            self.toneInput = QLineEdit()
+            self.toneInput.setText(str(int(self.duration * 1000)))
+            tonelayout.addWidget(self.toneInput)
+            senderlayout.addLayout(tonelayout)
+            
             self.toneInput.textChanged.connect(self.duration_changed)
 
             self.pictureBTN = QPushButton("Play picture")
             self.pictureBTN.setCheckable(True)
             self.pictureBTN.clicked.connect(self.sendPicture)
-            mainLayout.addWidget(self.pictureBTN)
+            senderlayout.addWidget(self.pictureBTN)
+            mainLayout.addLayout(senderlayout)
 
         self.setLayout(mainLayout)
 
@@ -126,16 +170,11 @@ class SenderWidget(QWidget):
                 target=self.sendPictureWorker,
                 daemon=True
             ).start()
+
         else:
             self.kill_send = True
 
     def sendPictureWorker(self):
-
-        if self.debugging:
-            send_debug = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
-            self.debug(send_debug)
-            return
-    
         t = np.linspace(0, self.duration, int(self.sample_rate * self.duration), endpoint=False)
         self.audio = np.array([np.sin(2 * np.pi * f * t) for f in self.outputFreqs])
 
@@ -143,30 +182,72 @@ class SenderWidget(QWidget):
         image_bitvector = ""
 
         if self.sendbinary:
-            temp = [1 if x == 0 else 0 for x in self.image.flatten()]
+            if self.inverted:
+                temp = [1 if x != 0 else 0 for x in self.image.flatten()]
+            else:
+                temp = [1 if x == 0 else 0 for x in self.image.flatten()]
             image_bitvector = "".join(binary_repr_v(temp))
         else:
             image_bitvector = "".join(binary_repr_v(self.image.flatten(), 8))
-        
+
         print(f"Saatimine võtab {str(datetime.timedelta(seconds=(np.ceil(len(image_bitvector) * 16/44) * self.duration)))}")
 
         counter = 0
+        hcounter = 0
         output_audio = np.zeros(0)
         debugstring = ""
 
-        for i in range(0, len(image_bitvector), 11):
+        stream = sd.OutputStream(
+            samplerate=self.sample_rate,
+            channels=1
+        )
+        stream.start()
+
+        if self.debugging:
+            idx = 0
+
+            while True:
+                if self.kill_send:
+                    print("Stopping send!")
+                    return
+            
+                bytearr = np.zeros(t.size)
+                bytearr += self.audio[idx]
+                idx += 1
+
+                output_audio = np.append(output_audio, self.audio[-1][len(self.audio[-1])//2:])
+                output_audio = np.append(output_audio, bytearr)
+
+                if idx == 17:
+                    sd.play(output_audio, self.sample_rate)
+                    sd.wait()
+                    idx = 0
+                    output_audio = np.zeros(0)
+
+        if self.hamming:
+            n = 11
+        else:
+            n = 16
+
+        for i in range(0, len(image_bitvector), n):
             if self.kill_send:
                 print("Stopping send!")
+                stream.stop()
+                stream.close()
                 return
             
-            raw = image_bitvector[i:i+11]
-            debugstring += raw
-            print(f"D: {raw.ljust(11, "0")}")
-            data = [int(b) for b in raw.ljust(11, "0")]
-            self.encodedBits = encodeHamming(data, self.dataPositions, self.parityPositions)
-
-            encstr = ("".join(map(str, self.encodedBits))).ljust(16, "0")
-            print(f"H: {encstr}\n")
+            if self.hamming:
+                raw = image_bitvector[i:i+11]
+                debugstring += raw
+                print(f"D: {raw.ljust(11, "0")}")
+                data = [int(b) for b in raw.ljust(11, "0")]
+                self.encodedBits = encodeHamming(data, self.dataPositions, self.parityPositions)
+                encstr = ("".join(map(str, self.encodedBits))).ljust(16, "0")
+            else:
+                encstr = image_bitvector[i:i+16]
+            
+            print(f"H{hcounter}: {encstr}")
+            hcounter += 1
 
             for x in range(0, 16, 4):
                 idx = int(encstr[x:x+4], 2)
@@ -183,21 +264,24 @@ class SenderWidget(QWidget):
 
                 counter += 1
 
-                if (counter % 200 == 0):
+                if (hcounter % 10 == 0):
                     print("Playing chunk!")
                     #scipy.io.wavfile.write("temp.wav", self.sample_rate, output_audio)
-                    sd.play(output_audio, self.sample_rate)
-                    sd.wait()
+                    stream.write(output_audio.astype(np.float32))
                     output_audio = np.zeros(0)
-                    input()
 
         spacer = 8
         print("\n".join(debugstring[i:i+spacer] for i in range(0, len(debugstring), spacer)))
 
-        sd.play(output_audio, self.sample_rate)
-        sd.wait()
-        output_audio = np.zeros(0)
-        
+        stream.write(output_audio.astype(np.float32))
+
+        while stream.active:
+            if self.kill_send:
+                print("Stopping send!")
+                stream.stop()
+                stream.close()
+                return
+
         print("Image sent!")
 
     def duration_changed(self, text):
@@ -206,16 +290,43 @@ class SenderWidget(QWidget):
         else:
             self.duration = 0.12
 
+    def picture_changed(self):
+        filePath = self.fileInput.text()
+        if not os.path.isfile(filePath):
+            print("File does not exist!")
+            return
+        
+        self.image = cv2.imread(filePath, cv2.IMREAD_GRAYSCALE)
+        print(self.image.shape)
+
+        qimg = QImage(self.image.data, self.image.shape[1], self.image.shape[0], QImage.Format.Format_Grayscale8)
+        self.image_frame.setPixmap(QPixmap.fromImage(qimg))
+
+        self.canvasPixmap = QPixmap.fromImage(qimg)
+        
+        self.image_frame.setPixmap(
+            self.canvasPixmap.scaled(
+                300,
+                300,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.FastTransformation
+            )
+        )
+
     def calibrate(self, up):
         #check if were done
         if self.calibIndex >= len(self.outputFreqs):
             self.stop_tone()
             print("Calibration tones complete.")
-            self.calibIndex = 0
+            self.calibIndex = -1
         else:
             if up:
+                self.calibBTNU.setText(f"Next note: {self.outputFreqs[self.calibIndex + 1]}")
+                self.calibBTND.setText(f"Prev note: {self.outputFreqs[self.calibIndex]}")
                 self.calibIndex += 1
             else:
+                self.calibBTNU.setText(f"Next note: {self.outputFreqs[self.calibIndex]}")
+                self.calibBTND.setText(f"Prev note: {self.outputFreqs[self.calibIndex - 1]}")
                 self.calibIndex -= 1
 
             activeFreqs = []
