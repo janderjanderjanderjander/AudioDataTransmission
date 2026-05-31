@@ -33,7 +33,7 @@ class ReceiverWidget(QWidget):
         #Filtering
         self.sampleRate = 44100
         self.chunkSize = 1024
-        self.cutoffLine = 5
+        self.cutoffLine = 7
         self.inputFreqs = np.round(np.linspace(1000, 15000, 17)) 
 
         self.parityPositions = {1, 2, 4, 8} 
@@ -166,7 +166,7 @@ class ReceiverWidget(QWidget):
         
         gData = getData(self.stream, self.chunkSize, self.sampleRate, self.freqGain, self.inputFreqs, option=2)
         onesAndZeros = [0 if x < self.cutoffLine else 1 for x in gData] # Normalize to 0 and 1
-        # print(onesAndZeros) #DEBUG GOOD PRINT
+        print(''.join(str(b) for b in onesAndZeros)) #DEBUG GOOD PRINT
         syncBit = onesAndZeros[-1]
         #print(syncBit)
 
@@ -195,19 +195,20 @@ class ReceiverWidget(QWidget):
                 #print(onesAndZeros)
                 #print(self.value4bit)
                 self.byteBuffer.append(f"{self.value4bit:04b}")
-                #print(self.byteBuffer[-1])
+                print(self.byteBuffer[-1])
                 self.state = 0
                 
 
-            if len(self.byteBuffer) >= 2:
-                binValue = self.byteBuffer[0] + self.byteBuffer[1]
+            if len(self.byteBuffer) >= 4:
+                binValue = self.byteBuffer[0] + self.byteBuffer[1] + self.byteBuffer[2] + self.byteBuffer[3]
                 binList = [int(b) for b in binValue] #16 bits
                 binList = binList[:15] #15 bits
                 
                 decoded = decodeHamming(binList, self.parityPositions, self.cutoffLine) #fixed result
                 dataBits = [decoded[i-1] for i in range(1, 16) if i not in self.parityPositions] #11 bit
-                print(binValue)
-                print(dataBits)
+                #print(binValue)
+                #print(dataBits)
+                x = input()
 
                 for bit in dataBits:
                     self.setPixel(bit)
